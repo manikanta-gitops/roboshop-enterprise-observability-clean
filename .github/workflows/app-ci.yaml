@@ -378,7 +378,7 @@ jobs:
         with:
           project: roboshop-${{ matrix.service }}
           path: ${{ env.SERVICE_DIR }}
-          format: 'HTML,SARIF'
+          format: 'ALL'
           args: >
             --failOnCVSS 8
             --enableRetired
