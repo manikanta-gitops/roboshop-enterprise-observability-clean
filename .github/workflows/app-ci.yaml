@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
       # SERVICE_DIR depends on matrix.service, so it must live in THIS job's env
       # (matrix only exists inside a job that declares strategy.matrix), never at
       # workflow-level env — that was the original blocking validation error.
@@ -180,7 +180,7 @@ jobs:
       - name: Require SonarQube configuration on protected PRs
         if: github.event_name == 'pull_request'
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           set -euo pipefail
@@ -205,7 +205,7 @@ jobs:
         uses: SonarSource/sonarqube-quality-gate-action@v1
         timeout-minutes: 10
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # -- SCA ----------------------------------------------------------------
