@@ -31,7 +31,6 @@ permissions:
 env:
   AWS_REGION: ${{ vars.DEV_AWS_REGION || 'ap-south-1' }}
   ECR_NAMESPACE: roboshop
-  SERVICE_DIR: apps/${{ matrix.service }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -62,12 +61,21 @@ jobs:
             mongodb:   ['apps/mongodb/**']
             mysql:     ['apps/mysql/**']
 
+      # NOTE: values that originate outside this repo's own control (workflow_dispatch
+      # input, action outputs) are passed in via `env:` and referenced as shell
+      # variables rather than interpolated directly into the script. Interpolating
+      # `${{ ... }}` straight into `run:` pastes untrusted text into the script body
+      # before the shell runs it, which is a known GitHub Actions injection vector.
       - id: set
+        env:
+          DISPATCH_SERVICE: ${{ inputs.service }}
+          DETECTED_SERVICES: ${{ steps.filter.outputs.changes }}
         run: |
-          if [ -n "${{ inputs.service }}" ]; then
-            SERVICES='["${{ inputs.service }}"]'
+          set -euo pipefail
+          if [ -n "$DISPATCH_SERVICE" ]; then
+            SERVICES=$(printf '["%s"]' "$DISPATCH_SERVICE")
           else
-            SERVICES='${{ steps.filter.outputs.changes }}'
+            SERVICES="$DETECTED_SERVICES"
           fi
           echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
           if [ "$SERVICES" = "[]" ]; then echo "any=false" >> "$GITHUB_OUTPUT"; else echo "any=true" >> "$GITHUB_OUTPUT"; fi
@@ -87,6 +95,10 @@ jobs:
     timeout-minutes: 30
     env:
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      # SERVICE_DIR depends on matrix.service, so it must live in THIS job's env
+      # (matrix only exists inside a job that declares strategy.matrix), never at
+      # workflow-level env — that was the original blocking validation error.
+      SERVICE_DIR: apps/${{ matrix.service }}
     strategy:
       fail-fast: false
       matrix:
