@@ -14,7 +14,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "express": "^4.21.2",
-    "mongodb": "^6.21.0",
+    "mongodb": "^7.5.0",
     "pino": "^9.6.0",
     "pino-http": "^11.0.0",
     "@instana/collector": "^6.5.0"
