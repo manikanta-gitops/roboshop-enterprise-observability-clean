@@ -1,4 +1,4 @@
-region            = "us-east-1"
+region            = "us-east-2"
 project           = "roboshop"
 state_bucket_name = "roboshop-tfstate-123456789012"
 lock_table_name   = "roboshop-tf-locks"
