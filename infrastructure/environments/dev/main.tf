@@ -51,7 +51,7 @@ module "eks" {
   public_access_cidrs    = var.public_access_cidrs
 
   # Managed Node Group
-  node_instance_types =  ["c7i-flex.large"]
+  node_instance_types = ["t3a.large"]
   node_capacity_type  = "ON_DEMAND"
   node_desired_size   = 1
   node_min_size       = 1
