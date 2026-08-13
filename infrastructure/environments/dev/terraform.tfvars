@@ -15,7 +15,7 @@ kubernetes_version = "1.35"
 app_namespace = "roboshop-dev"
 
 github_org  = "manikanta-gitops"
-github_repo = "roboshop-enterprise"
+github_repo = "roboshop-enterprise-observability-clean"
 
 create_github_oidc_provider = true
 
