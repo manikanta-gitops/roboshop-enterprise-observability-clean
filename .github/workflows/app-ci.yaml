@@ -408,7 +408,7 @@ jobs:
       # Docker image build
       # -----------------------------------------------------------------------
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ env.SERVICE_DIR }}
           push: false
