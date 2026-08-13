@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OWASP Dependency-Check suppressions.
+  Every entry MUST have an owner and an expiry date in the notes so the list
+  does not silently rot. Review this file in the monthly security cycle.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+  <!-- False positive: the CPE matcher maps the npm "cart" package name onto an
+       unrelated PHP shopping-cart product. Owner: platform. Review: 2026-12-31. -->
+  <suppress>
+    <notes>False positive CPE match on internal service name.</notes>
+    <packageUrl regex="true">^pkg:npm/(cart|catalogue|user)@.*$</packageUrl>
+    <cpe>cpe:/a:shopping_cart_project:shopping_cart</cpe>
+  </suppress>
+
+  <!-- Test-only tooling never ships in the runtime image (multi-stage build
+       drops devDependencies). Owner: platform. Review: 2026-12-31. -->
+  <suppress>
+    <notes>Dev/test-only dependency, excluded from the runtime image.</notes>
+    <packageUrl regex="true">^pkg:npm/(mocha|chai|nyc|jest|supertest)@.*$</packageUrl>
+    <cvssBelow>9.0</cvssBelow>
+  </suppress>
+
+</suppressions>

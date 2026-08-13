@@ -1,0 +1,10 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: roboshop-stateful
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+value: 100000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: "Protect stateful Roboshop data services during node pressure."

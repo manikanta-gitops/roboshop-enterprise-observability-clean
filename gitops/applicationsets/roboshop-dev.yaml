@@ -1,0 +1,109 @@
+# ---------------------------------------------------------------------------
+# One ArgoCD Application per Roboshop chart, dev environment.
+#
+# Sync waves: -1 platform (namespace, quotas, ExternalSecrets)
+#              0 datastores (mongodb, mysql, redis, rabbitmq)
+#              1 microservices (catalogue, user, cart, shipping, payment)
+#              2 frontend
+#
+# Environment-wide values live outside the chart directory, so they are loaded
+# through a second source with `ref: values` ($values/...). Relative paths that
+# escape the chart directory (../../environments/...) are rejected by ArgoCD.
+# ---------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: roboshop-dev
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  # Deleting the ApplicationSet must not delete running Applications.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - list:
+        elements:
+          - name: platform
+            chart: charts/platform
+            wave: "-1"
+          - name: mongodb
+            chart: charts/mongodb
+            wave: "0"
+          - name: mysql
+            chart: charts/mysql
+            wave: "0"
+          - name: redis
+            chart: charts/redis
+            wave: "0"
+          - name: rabbitmq
+            chart: charts/rabbitmq
+            wave: "0"
+          - name: catalogue
+            chart: charts/catalogue
+            wave: "1"
+          - name: user
+            chart: charts/user
+            wave: "1"
+          - name: cart
+            chart: charts/cart
+            wave: "1"
+          - name: shipping
+            chart: charts/shipping
+            wave: "1"
+          - name: payment
+            chart: charts/payment
+            wave: "1"
+          - name: frontend
+            chart: charts/frontend
+            wave: "2"
+  template:
+    metadata:
+      name: 'roboshop-dev-{{.name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{.wave}}'
+      labels:
+        roboshop.io/environment: dev
+        roboshop.io/service: '{{.name}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: roboshop
+      sources:
+        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+          targetRevision: main
+          path: '{{.chart}}'
+          helm:
+            releaseName: '{{.name}}'
+            valueFiles:
+              - values.yaml
+              - values-dev.yaml
+              - $values/environments/dev/global-values.yaml
+        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: roboshop-dev
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - ApplyOutOfSyncOnly=true
+          - PruneLast=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m
+      revisionHistoryLimit: 10
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas          # owned by the HPA, not by Git

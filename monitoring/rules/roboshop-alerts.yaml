@@ -1,0 +1,137 @@
+# ---------------------------------------------------------------------------
+# Roboshop alerting rules. Picked up automatically by the Prometheus operator
+# (ruleSelectorNilUsesHelmValues: false).
+# ---------------------------------------------------------------------------
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: roboshop-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: roboshop.availability
+      rules:
+        - alert: RoboshopPodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"roboshop-.*"}[15m]) > 3
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: '{{ $labels.pod }} is crash looping'
+            description: 'Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} restarted more than 3 times in 15 minutes.'
+            runbook_url: 'https://github.com/manikanta-gitops/roboshop-enterprise/blob/main/docs/runbooks/crashloop.md'
+
+        - alert: RoboshopDeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas{namespace=~"roboshop-.*"}
+              != kube_deployment_status_replicas_available{namespace=~"roboshop-.*"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: '{{ $labels.deployment }} has unavailable replicas'
+            description: '{{ $labels.namespace }}/{{ $labels.deployment }} has not reached its desired replica count for 15 minutes.'
+
+        - alert: RoboshopNoHealthyPods
+          expr: |
+            sum by (namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"roboshop-.*"}) == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: '{{ $labels.deployment }} is completely down'
+            description: 'No available replicas for {{ $labels.namespace }}/{{ $labels.deployment }}.'
+
+    - name: roboshop.traffic
+      rules:
+        - alert: RoboshopHighPodErrorSignal
+          expr: |
+            sum by (namespace) (increase(kube_pod_container_status_restarts_total{namespace=~"roboshop-.*"}[10m])) > 5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Elevated pod restart rate in {{ $labels.namespace }}'
+            description: 'More than five container restarts occurred in {{ $labels.namespace }} over the last 10 minutes.'
+
+        - alert: RoboshopMetricsTargetDown
+          expr: |
+            up{namespace="roboshop",service=~"cart|payment|shipping"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Metrics target {{ $labels.service }} is down'
+            description: 'Prometheus has been unable to scrape {{ $labels.service }} for 10 minutes. Check the ServiceMonitor, service endpoint, and application metrics endpoint.'
+
+    - name: roboshop.resources
+      rules:
+        - alert: RoboshopContainerCPUThrottling
+          expr: |
+            rate(container_cpu_cfs_throttled_periods_total{namespace=~"roboshop-.*"}[10m])
+            / rate(container_cpu_cfs_periods_total{namespace=~"roboshop-.*"}[10m]) > 0.25
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: '{{ $labels.container }} is CPU throttled'
+            description: 'More than 25% of CPU periods are throttled - raise the limit or lower the load.'
+
+        - alert: RoboshopContainerMemoryNearLimit
+          expr: |
+            container_memory_working_set_bytes{namespace=~"roboshop-.*",container!=""}
+            / on(container, pod, namespace) kube_pod_container_resource_limits{resource="memory"} > 0.9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: '{{ $labels.container }} is close to its memory limit'
+            description: 'Working set is above 90% of the memory limit; an OOMKill is likely.'
+
+        - alert: RoboshopPersistentVolumeFillingUp
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace=~"roboshop-.*"}
+            / kubelet_volume_stats_capacity_bytes{namespace=~"roboshop-.*"} < 0.15
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'PVC {{ $labels.persistentvolumeclaim }} is above 85% full'
+            description: 'Less than 15% free space left on {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}.'
+
+    - name: roboshop.datastores
+      rules:
+        - alert: RoboshopDatastoreDown
+          expr: |
+            kube_statefulset_status_replicas_ready{namespace=~"roboshop-.*",statefulset=~"mongodb|mysql|redis|rabbitmq"} == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: '{{ $labels.statefulset }} has no ready replica'
+            description: 'Datastore {{ $labels.namespace }}/{{ $labels.statefulset }} is unavailable - the dependent services will fail.'
+
+    - name: roboshop.cluster
+      rules:
+        - alert: RoboshopNodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Node {{ $labels.node }} is NotReady'
+            description: 'Node has been NotReady for 10 minutes.'
+
+        - alert: RoboshopNodePoolNearCapacity
+          expr: |
+            sum(kube_pod_container_resource_requests{resource="cpu"})
+            / sum(kube_node_status_allocatable{resource="cpu"}) > 0.85
+          for: 20m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Cluster CPU requests above 85% of capacity'
+            description: 'Scale the managed node group before the HPA runs out of room.'

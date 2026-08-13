@@ -1,0 +1,125 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 2 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  repository-policy:
+    name: repository policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate repository security policy
+        run: ./ci/validate-repository.sh
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck ci/*.sh scripts/*.sh
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node audit
+        run: |
+          set -euo pipefail
+          for f in apps/*/package-lock.json; do
+            [ -f "$f" ] || continue
+            dir="$(dirname "$f")"
+            npm --prefix "$dir" audit --omit=dev --audit-level=high
+          done
+
+
+  helm-validation:
+    name: helm validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.3
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
+      - name: Validate Helm and rendered Kubernetes
+        run: |
+          bash ci/lint.sh
+          bash ci/template.sh
+          bash ci/validate.sh
+
+  terraform-static:
+    name: terraform static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.5'
+      - name: fmt and validate
+        run: |
+          terraform fmt -recursive -check -diff infrastructure
+          for d in infrastructure/bootstrap infrastructure/environments/*; do
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+          done
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12.2991.0
+        with:
+          directory: infrastructure
+          framework: terraform
+          config_file: ci/checkov.yaml
+          soft_fail: false
+
+  application-tests:
+    name: application tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Node service tests
+        run: |
+          for d in apps/cart apps/catalogue apps/user; do
+            npm --prefix "$d" ci --no-audit --no-fund
+            npm --prefix "$d" test
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Payment tests
+        run: |
+          python -m pip install -q pytest
+          PYTHONPATH=apps/payment pytest -q apps/payment/tests
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Shipping tests
+        working-directory: apps/shipping
+        run: mvn -B -ntp test

@@ -1,0 +1,87 @@
+# ---------------------------------------------------------------------------
+# OpenSearch values (chart: opensearch/opensearch)
+# 3-node cluster in production sizing; drop replicas to 1 for dev by editing
+# gitops/platform/logging.yaml to point at values-dev.yaml.
+# ---------------------------------------------------------------------------
+
+clusterName: opensearch-cluster
+nodeGroup: master
+masterService: opensearch-cluster-master
+
+roles:
+  - master
+  - ingest
+  - data
+  - remote_cluster_client
+
+replicas: 3
+
+opensearchJavaOpts: "-Xms1g -Xmx1g"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    memory: 3Gi
+
+persistence:
+  enabled: true
+  storageClass: gp3
+  size: 100Gi
+
+# Spread the data nodes across AZs.
+antiAffinity: soft
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: opensearch
+
+extraEnvs:
+  - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-credentials
+        key: password
+
+config:
+  opensearch.yml: |
+    cluster.name: opensearch-cluster
+    network.host: 0.0.0.0
+    discovery.type: zen
+    plugins.security.disabled: false
+    plugins.security.ssl.transport.pemcert_filepath: certs/tls.crt
+    plugins.security.ssl.transport.pemkey_filepath: certs/tls.key
+    plugins.security.ssl.transport.pemtrustedcas_filepath: certs/ca.crt
+    plugins.security.ssl.transport.enforce_hostname_verification: false
+    plugins.security.ssl.http.enabled: true
+    plugins.security.ssl.http.pemcert_filepath: certs/tls.crt
+    plugins.security.ssl.http.pemkey_filepath: certs/tls.key
+    plugins.security.ssl.http.pemtrustedcas_filepath: certs/ca.crt
+    plugins.security.allow_default_init_securityindex: true
+    plugins.security.audit.type: internal_opensearch
+
+# Index lifecycle: hot for 7 days, delete after 30. Applied by the ISM plugin
+# through the bootstrap job in logging/opensearch/ism-policy.json.
+sysctlInit:
+  enabled: true
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false

@@ -1,0 +1,5 @@
+# Live release in staging. Written by .github/workflows/promote.yaml.
+environment: staging
+version: ""
+promotedAt: ""
+promotedBy: ""

@@ -1,0 +1,201 @@
+# =============================================================================
+# Terraform CI: fmt -> init -> validate -> checkov -> plan (-> apply on main)
+# =============================================================================
+name: terraform
+
+on:
+  schedule:
+    - cron: '0 6 * * 1-5'   # weekday drift detection against the real state
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/terraform.yaml'
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        default: dev
+        type: choice
+        options: [dev, production]
+      action:
+        description: plan or apply
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+  security-events: write
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.9.5
+
+jobs:
+  static:
+    name: fmt / validate / checkov
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -recursive -check -diff infrastructure
+
+      - name: terraform validate (all stacks)
+        run: |
+          set -euo pipefail
+          for d in infrastructure/bootstrap infrastructure/environments/*; do
+            echo "::group::validate $d"
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+            echo "::endgroup::"
+          done
+
+      - name: Checkov (Terraform)
+        uses: bridgecrewio/checkov-action@v12.2991.0
+        with:
+          directory: infrastructure
+          framework: terraform
+          config_file: ci/checkov.yaml
+          output_format: cli,sarif
+          output_file_path: console,checkov-tf.sarif
+          soft_fail: false
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-tf.sarif
+          category: checkov-terraform
+
+  plan:
+    name: plan ${{ matrix.environment }}
+    needs: static
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, linux, x64, roboshop-tf]
+    timeout-minutes: 20
+    concurrency:
+      group: terraform-plan-${{ matrix.environment }}
+      cancel-in-progress: false
+    strategy:
+      matrix:
+        environment: [dev, production]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ matrix.environment == 'production' && secrets.AWS_OIDC_ROLE_ARN_PRODUCTION || secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform plan
+        id: plan
+        working-directory: infrastructure/environments/${{ matrix.environment }}
+        run: |
+          set -o pipefail
+          terraform init -input=false -lock-timeout=5m
+          terraform plan -input=false -no-color -lock-timeout=5m \
+            -detailed-exitcode -out=tfplan | tee plan.txt || code=$?
+          echo "exitcode=${code:-0}" >> "$GITHUB_OUTPUT"
+          # 0 = no changes, 2 = changes pending, anything else is a real error.
+          if [ "${code:-0}" -gt 2 ]; then exit "$code"; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: infrastructure/environments/${{ matrix.environment }}/tfplan
+          retention-days: 5
+
+      - name: Report drift on the scheduled run
+        if: github.event_name == 'schedule' && steps.plan.outputs.exitcode == '2'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          echo "::warning::infrastructure drift detected in ${{ matrix.environment }}"
+          if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              --data "$(jq -nc --arg t ":warning: Terraform drift detected in *${{ matrix.environment }}* - review ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: $t}')" \
+              "$SLACK_WEBHOOK_URL" >/dev/null
+          fi
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infrastructure/environments/${{ matrix.environment }}/plan.txt', 'utf8');
+            const body = `### Terraform plan - ${{ matrix.environment }}\n\n<details><summary>show</summary>\n\n\`\`\`\n${plan.slice(-60000)}\n\`\`\`\n\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  apply:
+    name: apply ${{ inputs.environment }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: [static, plan]
+    runs-on: [self-hosted, linux, x64, roboshop-tf]
+    timeout-minutes: 20
+    concurrency:
+      group: terraform-apply-${{ inputs.environment }}
+      cancel-in-progress: false
+    environment: ${{ inputs.environment }}   # protection rules gate production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.environment == 'production' && secrets.AWS_OIDC_ROLE_ARN_PRODUCTION || secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: infrastructure/environments/${{ inputs.environment }}
+
+      - name: terraform init
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform init -input=false -lock-timeout=5m
+
+      # The exact plan file reviewed in the plan job is applied.
+      # No re-planning = no divergence between review and execution.
+      - name: terraform apply
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then exit 0; fi
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg t ":hammer_and_wrench: terraform apply on *${{ inputs.environment }}* finished with status *${{ job.status }}* (by ${{ github.actor }})" '{text: $t}')" \
+            "$SLACK_WEBHOOK_URL" >/dev/null

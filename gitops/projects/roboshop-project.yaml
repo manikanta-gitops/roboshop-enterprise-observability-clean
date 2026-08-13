@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: roboshop
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Roboshop microservices platform (all environments)
+  sourceRepos:
+    - https://github.com/manikanta-gitops/roboshop-enterprise.git
+  destinations:
+    - namespace: 'roboshop-*'
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: storage.k8s.io
+      kind: StorageClass
+    - group: scheduling.k8s.io
+      kind: PriorityClass
+    - group: networking.k8s.io
+      kind: IngressClass
+    - group: external-secrets.io
+      kind: ClusterSecretStore
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: external-secrets.io
+      kind: ExternalSecret
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  # Never let an app create cluster-wide RBAC or webhooks from Git.
+  clusterResourceBlacklist:
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+  orphanedResources:
+    warn: true
+  roles:
+    - name: read-only
+      description: View Roboshop applications
+      policies:
+        - p, proj:roboshop:read-only, applications, get, roboshop/*, allow
+    - name: deployer
+      description: Sync non-production applications
+      policies:
+        - p, proj:roboshop:deployer, applications, get, roboshop/*, allow
+        - p, proj:roboshop:deployer, applications, sync, roboshop/roboshop-dev-*, allow
+        - p, proj:roboshop:deployer, applications, sync, roboshop/roboshop-qa-*, allow
+        - p, proj:roboshop:deployer, applications, sync, roboshop/roboshop-staging-*, allow
+    - name: release-manager
+      description: Sync any application, including production
+      policies:
+        - p, proj:roboshop:release-manager, applications, *, roboshop/*, allow

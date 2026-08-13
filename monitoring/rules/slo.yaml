@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: roboshop-slo
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: roboshop.slo
+      interval: 30s
+      rules:
+        - record: roboshop:deployment_availability:ratio
+          expr: |
+            sum by (namespace, deployment) (
+              kube_deployment_status_replicas_available{namespace=~"roboshop-.*"}
+            )
+            /
+            clamp_min(
+              sum by (namespace, deployment) (
+                kube_deployment_spec_replicas{namespace=~"roboshop-.*"}
+              ), 1
+            )
+
+        - alert: RoboshopAvailabilitySLOBreach
+          expr: roboshop:deployment_availability:ratio < 0.99
+          for: 10m
+          labels:
+            severity: warning
+            slo: availability
+          annotations:
+            summary: '{{ $labels.namespace }}/{{ $labels.deployment }} availability below 99%'
+            description: 'Deployment availability has remained below the workload availability SLO threshold for 10 minutes.'

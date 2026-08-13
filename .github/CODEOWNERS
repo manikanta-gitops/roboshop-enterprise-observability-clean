@@ -1,0 +1,23 @@
+# Every PR needs one review from the platform owner.
+*                       @manikanta-gitops
+
+/infrastructure/        @manikanta-gitops
+/gitops/                @manikanta-gitops
+/.github/workflows/     @manikanta-gitops
+/charts/common/         @manikanta-gitops
+/environments/          @manikanta-gitops
+
+/apps/cart/             @manikanta-gitops
+/apps/catalogue/        @manikanta-gitops
+/apps/user/             @manikanta-gitops
+/apps/payment/          @manikanta-gitops
+/apps/shipping/         @manikanta-gitops
+/apps/frontend/         @manikanta-gitops
+
+/monitoring/            @manikanta-gitops
+/logging/               @manikanta-gitops
+/security/              @manikanta-gitops
+/scripts/               @manikanta-gitops
+/releases/              @manikanta-gitops
+/.github/CODEOWNERS     @manikanta-gitops
+/docs/                  @manikanta-gitops

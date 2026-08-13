@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: roboshop-require-nonroot
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-nonroot
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: roboshop.io/environment
+                    operator: In
+                    values: [dev, qa, staging, production]
+      validate:
+        message: "Roboshop workloads must run as non-root and must not allow privilege escalation."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false

@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Cluster platform services (monitoring, logging)
+  sourceRepos:
+    - https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - https://prometheus-community.github.io/helm-charts
+    - https://opensearch-project.github.io/helm-charts
+    - https://fluent.github.io/helm-charts
+    - https://kyverno.github.io/kyverno
+  destinations:
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+    - namespace: logging
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    - namespace: kyverno
+      server: https://kubernetes.default.svc
+  # Platform charts legitimately need CRDs and cluster RBAC.
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  orphanedResources:
+    warn: true

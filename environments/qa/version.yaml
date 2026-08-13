@@ -1,0 +1,5 @@
+# Live release in qa. Written by .github/workflows/promote.yaml.
+environment: qa
+version: ""
+promotedAt: ""
+promotedBy: ""

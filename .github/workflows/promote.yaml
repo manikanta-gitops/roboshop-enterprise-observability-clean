@@ -1,0 +1,194 @@
+name: promote
+
+# ---------------------------------------------------------------------------
+# Environment promotion. Values-only change: the image tag / chart version
+# written here already exists in ECR (built once by app-ci, versioned once by
+# release). Nothing is rebuilt, so the artifact that passed QA is bit-for-bit
+# the artifact that reaches production.
+#
+#   release v2.0.1 -> promote dev -> qa -> staging -> production
+#
+# Production requires a GitHub Environment approval (Settings > Environments >
+# production > required reviewers).
+# ---------------------------------------------------------------------------
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to promote, e.g. 2.0.1 (must exist in releases/)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [qa, staging, production]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: promote-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote ${{ inputs.version }} -> ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN || github.token }}
+
+      - uses: mikefarah/yq@v4.44.3
+
+      - name: Verify the release exists
+        run: |
+          set -euo pipefail
+          f="releases/${{ inputs.version }}.yaml"
+          test -f "$f" || { echo "::error::$f not found - cut the release first (git tag v${{ inputs.version }})"; exit 1; }
+          cat "$f"
+
+      # Gate: an environment can only receive a version that already runs in
+      # the previous stage. Prevents "straight to prod" promotions.
+      - name: Enforce promotion order
+        id: order
+        env:
+          TARGET: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            qa) prev="dev" ;;
+            staging) prev="qa" ;;
+            production) prev="staging" ;;
+          esac
+          [ -z "$prev" ] && exit 0
+          cur=$(yq -r '.version // ""' "environments/$prev/version.yaml" 2>/dev/null || echo "")
+          echo "previous=$cur" >> "$GITHUB_OUTPUT"
+          if [ "$cur" != "$VERSION" ]; then
+            echo "::error::$VERSION is not live in '$prev' (found '${cur:-none}'). Promote through $prev first."
+            exit 1
+          fi
+
+      - name: Write image tags
+        env:
+          TARGET: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          list="cart catalogue user shipping payment frontend"
+          REGISTRY="${{ vars.ECR_REGISTRY }}"
+          [ -n "$REGISTRY" ] || { echo "::error::ECR_REGISTRY GitHub Environment variable is required"; exit 1; }
+          yq -i ".image.registry = \"$REGISTRY\"" "environments/$TARGET/global-values.yaml"
+          for svc in $list; do
+            f="charts/$svc/values-$TARGET.yaml"
+            test -f "$f" || { echo "::error::$f missing"; exit 1; }
+            tag=$(yq -r ".images.$svc.tag" "releases/$VERSION.yaml")
+            digest=$(yq -r ".images.$svc.digest" "releases/$VERSION.yaml")
+            yq -i ".image.repository = \"roboshop/$svc\"
+                 | .image.tag = \"$tag\"
+                 | .image.digest = \"$digest\"" "$f"
+            echo "$svc -> $tag ($digest)"
+          done
+          mkdir -p "environments/$TARGET"
+          {
+            echo "# Live release in $TARGET. Written by .github/workflows/promote.yaml."
+            echo "environment: $TARGET"
+            echo "version: \"$VERSION\""
+            echo "promotedAt: \"$(date -u +%FT%TZ)\""
+            echo "promotedBy: \"${{ github.actor }}\""
+          } > "environments/$TARGET/version.yaml"
+
+      - name: Validate Helm values YAML
+        run: |
+          set -euo pipefail
+          for f in charts/*/values-*.yaml; do
+            [ -f "$f" ] || continue
+            yq eval '.' "$f" > /dev/null || { echo "::error::Invalid YAML: $f"; exit 1; }
+          done
+
+      - name: Submit promotion GitOps PR
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN || github.token }}
+        run: |
+          ./scripts/create-gitops-pr.sh \
+            "automation/promote-${{ inputs.environment }}-${{ inputs.version }}" \
+            "chore(promote): ${{ inputs.environment }} -> ${{ inputs.version }}" \
+            "chore(promote): ${{ inputs.version }} to ${{ inputs.environment }}" \
+            "Automated environment promotion for release ${{ inputs.version }}."
+
+      - name: Wait for ArgoCD to sync
+        run: sleep ${{ vars.PROMOTE_SYNC_WAIT_SECONDS || 90 }}
+
+      - name: Post-deployment smoke test
+        id: smoke
+        env:
+          SMOKE_BASE_URL: ${{ vars.SMOKE_BASE_URL || secrets.SMOKE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${SMOKE_BASE_URL:-}" ] || { echo "::error::SMOKE_BASE_URL is required for every promotion"; exit 1; }
+          ./scripts/smoke-test.sh "$SMOKE_BASE_URL" "${{ inputs.version }}"
+
+      - name: Automatic GitOps rollback after failed smoke test
+        if: failure() && steps.order.outputs.previous != ''
+        env:
+          TARGET: ${{ inputs.environment }}
+          VERSION: ${{ steps.order.outputs.previous }}
+        run: |
+          set -euo pipefail
+          test -f "releases/$VERSION.yaml" || { echo "::error::previous release manifest $VERSION is missing"; exit 1; }
+          list="cart catalogue user shipping payment frontend"
+          REGISTRY="${{ vars.ECR_REGISTRY }}"
+          for svc in $list; do
+            f="charts/$svc/values-$TARGET.yaml"
+            tag=$(yq -r ".images.$svc.tag" "releases/$VERSION.yaml")
+            digest=$(yq -r ".images.$svc.digest" "releases/$VERSION.yaml")
+            yq -i ".image.registry = \"$REGISTRY\" | .image.repository = \"roboshop/$svc\" | .image.tag = \"$tag\" | .image.digest = \"$digest\"" "$f"
+          done
+          cat > "environments/$TARGET/version.yaml" <<EOF
+          # Automatic rollback after failed promotion smoke test.
+          environment: $TARGET
+          version: "$VERSION"
+          promotedAt: "$(date -u +%FT%TZ)"
+          promotedBy: "automatic-rollback"
+          EOF
+          ./scripts/create-gitops-pr.sh \
+            "automation/rollback-${TARGET}-${VERSION}-${{ github.run_id }}" \
+            "revert(promotion): $TARGET -> $VERSION" \
+            "revert(promotion): rollback $TARGET to $VERSION" \
+            "Automated rollback after a failed promotion smoke test."
+
+      - name: Summary
+        run: |
+          {
+            echo "### Promoted \`${{ inputs.version }}\` to \`${{ inputs.environment }}\`"
+            echo ""
+            echo "ArgoCD auto-syncs within ~3 minutes. Rollback:"
+            echo '```'
+            echo "./scripts/rollback.sh ${{ inputs.environment }} <previous-version>"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then exit 0; fi
+          case "$STATUS" in
+            success) icon=":white_check_mark:" ;;
+            failure) icon=":rotating_light:" ;;
+            *)       icon=":warning:" ;;
+          esac
+          text="$icon *${{ inputs.environment }}* promotion of \`${{ inputs.version }}\` finished with status *$STATUS* (by ${{ github.actor }})"
+          [ "$STATUS" = "failure" ] && text="$text\nRollback: \`./scripts/rollback.sh ${{ inputs.environment }} <previous-version>\`"
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg t "$text" --arg u "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              '{text: ($t + "\n<" + $u + "|view run>")}')" \
+            "$SLACK_WEBHOOK_URL" >/dev/null

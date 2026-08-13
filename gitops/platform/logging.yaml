@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+# OpenSearch (log store) + OpenSearch Dashboards + Fluent Bit (shipper).
+# Waves: -15 OpenSearch, -14 Dashboards, -13 Fluent Bit (needs the sink first).
+# ---------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-15"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  sources:
+    - repoURL: https://opensearch-project.github.io/helm-charts
+      chart: opensearch
+      targetRevision: 2.23.1
+      helm:
+        releaseName: opensearch
+        valueFiles:
+          - $values/logging/opensearch/values.yaml
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true, allowEmpty: false }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 10m }
+  revisionHistoryLimit: 5
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch-dashboards
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-14"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  sources:
+    - repoURL: https://opensearch-project.github.io/helm-charts
+      chart: opensearch-dashboards
+      targetRevision: 2.21.0
+      helm:
+        releaseName: opensearch-dashboards
+        valueFiles:
+          - $values/logging/opensearch-dashboards/values.yaml
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true, allowEmpty: false }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 10m }
+  revisionHistoryLimit: 5
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fluent-bit
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-13"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  sources:
+    - repoURL: https://fluent.github.io/helm-charts
+      chart: fluent-bit
+      targetRevision: 0.47.5
+      helm:
+        releaseName: fluent-bit
+        valueFiles:
+          - $values/logging/fluent-bit/values.yaml
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true, allowEmpty: false }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 10m }
+  revisionHistoryLimit: 5

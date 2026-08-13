@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# OpenSearch Dashboards (chart: opensearch/opensearch-dashboards)
+# ---------------------------------------------------------------------------
+
+opensearchHosts: "https://opensearch-cluster-master.logging.svc.cluster.local:9200"
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+extraEnvs:
+  - name: OPENSEARCH_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-credentials
+        key: username
+  - name: OPENSEARCH_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: opensearch-credentials
+        key: password
+
+config:
+  opensearch_dashboards.yml: |
+    server.name: roboshop-logs
+    server.host: "0.0.0.0"
+    opensearch.ssl.verificationMode: none
+    opensearch.requestHeadersWhitelist: [authorization, securitytenant]
+    opensearch_security.multitenancy.enabled: false
+
+ingress:
+  enabled: true
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/group.name: roboshop-platform
+  hosts:
+    - host: logs.example.com
+      paths:
+        - path: /
+          pathType: Prefix

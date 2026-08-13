@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: npm
+    directory: /apps/cart
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /apps/catalogue
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /apps/user
+    schedule:
+      interval: weekly
+  - package-ecosystem: maven
+    directory: /apps/shipping
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /apps/payment
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /infrastructure/environments/dev
+    schedule:
+      interval: weekly
+  - package-ecosystem: terraform
+    directory: /infrastructure/environments/production
+    schedule:
+      interval: weekly

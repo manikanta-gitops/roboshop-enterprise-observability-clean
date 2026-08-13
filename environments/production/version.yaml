@@ -1,0 +1,5 @@
+# Live release in production. Written by .github/workflows/promote.yaml.
+environment: production
+version: ""
+promotedAt: ""
+promotedBy: ""

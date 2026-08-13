@@ -1,0 +1,5 @@
+# Live release in dev. Written by .github/workflows/promote.yaml.
+environment: dev
+version: "2.0.1"
+promotedAt: "2026-08-06T00:00:00Z"
+promotedBy: "bootstrap"

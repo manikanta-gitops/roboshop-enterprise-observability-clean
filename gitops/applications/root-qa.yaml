@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------
+# App-of-apps root for the qa environment.
+#
+# Apply ONCE per cluster:
+#   kubectl apply -f gitops/projects/roboshop-project.yaml
+#   kubectl apply -f gitops/applications/root-qa.yaml
+#
+# Everything else (ApplicationSet -> 11 Applications) is pulled from Git.
+# ---------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: roboshop-qa-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    roboshop.io/environment: qa
+spec:
+  project: roboshop
+  source:
+    repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    targetRevision: main
+    path: gitops/applicationsets
+    directory:
+      recurse: false
+      include: 'roboshop-qa.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # syncPolicy is a child of spec - NOT of destination.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 10

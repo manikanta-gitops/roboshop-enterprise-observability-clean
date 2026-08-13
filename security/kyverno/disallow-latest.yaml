@@ -1,0 +1,49 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: roboshop-disallow-latest
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-latest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: roboshop.io/environment
+                    operator: In
+                    values: [dev, qa, staging, production]
+      validate:
+        message: "Roboshop workloads must not use the mutable :latest image tag."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: roboshop-disallow-latest-initcontainers
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-latest-initcontainers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchExpressions:
+                  - key: roboshop.io/environment
+                    operator: In
+                    values: [dev, qa, staging, production]
+      validate:
+        message: "Roboshop init containers must not use the mutable :latest image tag."
+        pattern:
+          spec:
+            initContainers:
+              - image: "!*:latest"

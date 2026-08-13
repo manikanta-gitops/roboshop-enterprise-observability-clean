@@ -1,0 +1,81 @@
+# =============================================================================
+# Helm chart CI: lint -> template -> kubeconform -> checkov
+# Reuses the existing scripts in ci/.
+# =============================================================================
+name: helm-ci
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'charts/**'
+      - 'environments/**'
+      - 'ci/**'
+      - '.github/workflows/helm-ci.yaml'
+  pull_request:
+    paths:
+      - 'charts/**'
+      - 'environments/**'
+      - 'ci/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  HELM_VERSION: v3.15.3
+  KUBE_VERSION: '1.35.0'
+
+jobs:
+  validate:
+    name: lint / template / kubeconform / checkov
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+
+      - name: Build chart dependencies
+        run: |
+          set -euo pipefail
+          for c in charts/*/; do
+            [ -f "$c/Chart.yaml" ] || continue
+            [ "$(basename "$c")" = "common" ] && continue
+            helm dependency update "$c"
+          done
+
+      - name: helm lint (all charts, all environments)
+        run: bash ci/lint.sh
+
+      - name: helm template
+        run: bash ci/template.sh
+
+      - name: kubeconform + policy validation
+        run: bash ci/validate.sh
+
+      - name: Checkov (Helm + rendered manifests)
+        uses: bridgecrewio/checkov-action@v12.2991.0
+        with:
+          directory: charts
+          framework: helm
+          config_file: ci/checkov.yaml
+          output_format: cli,sarif
+          output_file_path: console,checkov-helm.sarif
+          soft_fail: false
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-helm.sarif
+          category: checkov-helm
+
