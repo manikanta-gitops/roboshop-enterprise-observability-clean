@@ -198,11 +198,17 @@ jobs:
           [ -n "${SONAR_HOST_URL:-}" ] || { echo "::error::SONAR_HOST_URL is required for PR CI"; exit 1; }
           [ -n "${SONAR_TOKEN:-}" ] || { echo "::error::SONAR_TOKEN is required for PR CI"; exit 1; }
 
+      - name: Setup Java 21 for SonarQube
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: SonarQube scan
         if: ${{ env.SONAR_HOST_URL != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        uses: SonarSource/sonarqube-scan-action@v2
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
         with:
           projectBaseDir: ${{ env.SERVICE_DIR }}
           args: >
@@ -228,7 +234,7 @@ jobs:
           restore-keys: owasp-dc-${{ runner.os }}-
 
       - name: OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@main
+        uses: dependency-check/Dependency-Check_Action@v6
         with:
           project: roboshop-${{ matrix.service }}
           path: ${{ env.SERVICE_DIR }}
