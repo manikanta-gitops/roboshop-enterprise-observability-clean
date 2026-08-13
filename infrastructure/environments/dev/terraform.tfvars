@@ -22,5 +22,5 @@ create_github_oidc_provider = true
 argocd_domain = "argocd.streanzo.online"
 
 public_access_cidrs = [
-  "13.201.120.129/32"
+  "16.171.136.20/32"
 ]
