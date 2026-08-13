@@ -20,9 +20,20 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: 'Force-build a single service (leave empty to auto-detect)'
+        description: 'Select a service to force-build (leave as blank to auto-detect)'
         required: false
-        type: string
+        type: choice
+        default: ''
+        options:
+          - ''
+          - cart
+          - catalogue
+          - user
+          - payment
+          - shipping
+          - frontend
+          - mongodb
+          - mysql
 
 permissions:
   contents: read
