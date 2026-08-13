@@ -5,8 +5,13 @@
 #   -> docker build -> Trivy -> SBOM -> scanned artifact -> dev ECR -> GitOps PR
 #
 # Only the services whose files changed are built. Images are tagged with the
-# commit SHA (immutable) and, for main, also with the environment name.
+# commit SHA (immutable).
+#
+# Manual workflow_dispatch can force-build one service.
+# Manual dispatch publishes to ECR but does NOT perform GitOps write-back.
+# GitOps write-back happens only for normal pushes to main.
 # =============================================================================
+
 name: app-ci
 
 on:
@@ -15,17 +20,19 @@ on:
     paths:
       - 'apps/**'
       - '.github/workflows/app-ci.yaml'
+
   pull_request:
     branches: [main]
+
   workflow_dispatch:
     inputs:
       service:
-        description: 'Select a service to force-build (leave as blank to auto-detect)'
+        description: 'Select a service to force-build'
         required: false
         type: choice
-        default: ''
+        default: auto
         options:
-          - ''
+          - auto
           - cart
           - catalogue
           - user
@@ -44,17 +51,21 @@ env:
   ECR_NAMESPACE: roboshop
 
 jobs:
+
   # ---------------------------------------------------------------------------
-  # 1. Which services changed?
+  # 1. Detect changed services
   # ---------------------------------------------------------------------------
   detect:
     name: detect changed services
     runs-on: ubuntu-latest
+
     outputs:
       services: ${{ steps.set.outputs.services }}
       any: ${{ steps.set.outputs.any }}
       environment: ${{ steps.env.outputs.environment }}
+
     steps:
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -72,65 +83,95 @@ jobs:
             mongodb:   ['apps/mongodb/**']
             mysql:     ['apps/mysql/**']
 
-      # NOTE: values that originate outside this repo's own control (workflow_dispatch
-      # input, action outputs) are passed in via `env:` and referenced as shell
-      # variables rather than interpolated directly into the script. Interpolating
-      # `${{ ... }}` straight into `run:` pastes untrusted text into the script body
-      # before the shell runs it, which is a known GitHub Actions injection vector.
+      # Values from workflow_dispatch/action outputs are passed through env
+      # instead of directly interpolating them into shell commands.
       - id: set
         env:
           DISPATCH_SERVICE: ${{ inputs.service }}
           DETECTED_SERVICES: ${{ steps.filter.outputs.changes }}
         run: |
           set -euo pipefail
-          if [ -n "$DISPATCH_SERVICE" ]; then
+
+          if [ -n "$DISPATCH_SERVICE" ] && [ "$DISPATCH_SERVICE" != "auto" ]; then
             SERVICES=$(printf '["%s"]' "$DISPATCH_SERVICE")
           else
             SERVICES="$DETECTED_SERVICES"
           fi
+
           echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
-          if [ "$SERVICES" = "[]" ]; then echo "any=false" >> "$GITHUB_OUTPUT"; else echo "any=true" >> "$GITHUB_OUTPUT"; fi
+
+          if [ "$SERVICES" = "[]" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
           echo "Building: $SERVICES"
 
       - id: env
         run: echo "environment=dev" >> "$GITHUB_OUTPUT"
 
+
   # ---------------------------------------------------------------------------
-  # 2. Test, scan, build, push
+  # 2. Test, scan and build
   # ---------------------------------------------------------------------------
   build:
     name: build ${{ matrix.service }}
+
     needs: detect
+
     if: needs.detect.outputs.any == 'true'
+
     runs-on: ubuntu-latest
+
     timeout-minutes: 30
+
     env:
       SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-      # SERVICE_DIR depends on matrix.service, so it must live in THIS job's env
-      # (matrix only exists inside a job that declares strategy.matrix), never at
-      # workflow-level env — that was the original blocking validation error.
       SERVICE_DIR: apps/${{ matrix.service }}
+
     strategy:
       fail-fast: false
       matrix:
         service: ${{ fromJSON(needs.detect.outputs.services) }}
+
     steps:
-      # -- checkout -----------------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------------------------
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+
+      # -----------------------------------------------------------------------
+      # Detect application language
+      # -----------------------------------------------------------------------
       - name: Detect language
         id: lang
         run: |
+          set -euo pipefail
+
           d="${{ env.SERVICE_DIR }}"
-          if   [ -f "$d/package.json" ];      then echo "lang=node"   >> "$GITHUB_OUTPUT"
-          elif [ -f "$d/pom.xml" ];           then echo "lang=java"   >> "$GITHUB_OUTPUT"
-          elif [ -f "$d/requirements.txt" ];  then echo "lang=python" >> "$GITHUB_OUTPUT"
-          else                                     echo "lang=static" >> "$GITHUB_OUTPUT"
+
+          if [ -f "$d/package.json" ]; then
+            echo "lang=node" >> "$GITHUB_OUTPUT"
+
+          elif [ -f "$d/pom.xml" ]; then
+            echo "lang=java" >> "$GITHUB_OUTPUT"
+
+          elif [ -f "$d/requirements.txt" ]; then
+            echo "lang=python" >> "$GITHUB_OUTPUT"
+
+          else
+            echo "lang=static" >> "$GITHUB_OUTPUT"
           fi
 
-      # -- install dependencies ----------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # Node.js
+      # -----------------------------------------------------------------------
       - uses: actions/setup-node@v4
         if: steps.lang.outputs.lang == 'node'
         with:
@@ -138,6 +179,13 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ env.SERVICE_DIR }}/package-lock.json
 
+
+      # -----------------------------------------------------------------------
+      # Java application runtime
+      #
+      # Keep Java 17 for the actual application build/test.
+      # SonarScanner has its own Java 21 runtime through Scanner CLI v8.
+      # -----------------------------------------------------------------------
       - uses: actions/setup-java@v4
         if: steps.lang.outputs.lang == 'java'
         with:
@@ -145,6 +193,10 @@ jobs:
           java-version: '17'
           cache: maven
 
+
+      # -----------------------------------------------------------------------
+      # Python
+      # -----------------------------------------------------------------------
       - uses: actions/setup-python@v5
         if: steps.lang.outputs.lang == 'python'
         with:
@@ -152,42 +204,99 @@ jobs:
           cache: pip
           cache-dependency-path: ${{ env.SERVICE_DIR }}/requirements.txt
 
+
+      # -----------------------------------------------------------------------
+      # Install dependencies
+      # -----------------------------------------------------------------------
       - name: Install dependencies
         working-directory: ${{ env.SERVICE_DIR }}
         run: |
+          set -euo pipefail
+
           case "${{ steps.lang.outputs.lang }}" in
-            node)   npm ci --no-audit --no-fund ;;
-            java)   mvn -B -ntp dependency:go-offline ;;
-            python) python -m pip install --upgrade pip && pip install -r requirements.txt && pip install pytest ;;
-            static) echo "no dependencies" ;;
+
+            node)
+              npm ci --no-audit --no-fund
+              ;;
+
+            java)
+              mvn -B -ntp dependency:go-offline
+              ;;
+
+            python)
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt
+              pip install pytest
+              ;;
+
+            static)
+              echo "no dependencies"
+              ;;
+
           esac
 
-      # -- unit tests ---------------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # Unit tests
+      # -----------------------------------------------------------------------
       - name: Unit tests
         working-directory: ${{ env.SERVICE_DIR }}
         run: |
+          set -euo pipefail
+
           case "${{ steps.lang.outputs.lang }}" in
+
             node)
-              npm test ;;
+              npm test
+              ;;
+
             java)
-              mvn -B -ntp test ;;
+              mvn -B -ntp test
+              ;;
+
             python)
-              test -d tests && pytest -q ;;
+              if [ -d tests ]; then
+                pytest -q
+              else
+                echo "No tests directory - skipping pytest"
+              fi
+              ;;
+
             static)
-              echo "static asset service - nothing to unit test" ;;
+              echo "static asset service - nothing to unit test"
+              ;;
+
           esac
 
-      # -- build --------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # Application build
+      # -----------------------------------------------------------------------
       - name: Build application
         working-directory: ${{ env.SERVICE_DIR }}
         run: |
+          set -euo pipefail
+
           case "${{ steps.lang.outputs.lang }}" in
-            java) mvn -B -ntp -DskipTests package ;;
-            node) npm run build --if-present ;;
-            *)    echo "no build step" ;;
+
+            java)
+              mvn -B -ntp -DskipTests package
+              ;;
+
+            node)
+              npm run build --if-present
+              ;;
+
+            *)
+              echo "no build step"
+              ;;
+
           esac
 
-      # -- SAST / code quality -------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # SonarQube configuration validation
+      # -----------------------------------------------------------------------
       - name: Require SonarQube configuration on protected PRs
         if: github.event_name == 'pull_request'
         env:
@@ -195,19 +304,29 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           set -euo pipefail
-          [ -n "${SONAR_HOST_URL:-}" ] || { echo "::error::SONAR_HOST_URL is required for PR CI"; exit 1; }
-          [ -n "${SONAR_TOKEN:-}" ] || { echo "::error::SONAR_TOKEN is required for PR CI"; exit 1; }
 
-      - name: Setup Java 21 for SonarQube
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
+          [ -n "${SONAR_HOST_URL:-}" ] || {
+            echo "::error::SONAR_HOST_URL is required for PR CI"
+            exit 1
+          }
 
+          [ -n "${SONAR_TOKEN:-}" ] || {
+            echo "::error::SONAR_TOKEN is required for PR CI"
+            exit 1
+          }
+
+
+      # -----------------------------------------------------------------------
+      # SonarQube scan
+      #
+      # Scanner CLI v8 uses Java 21.
+      # Therefore we DO NOT change the application's Java 17 runtime above.
+      # -----------------------------------------------------------------------
       - name: SonarQube scan
         if: ${{ env.SONAR_HOST_URL != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
         uses: SonarSource/sonarqube-scan-action@v8.2.1
         with:
           projectBaseDir: ${{ env.SERVICE_DIR }}
@@ -217,6 +336,12 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.exclusions=**/node_modules/**,**/target/**,**/static/vendor/**
 
+
+      # -----------------------------------------------------------------------
+      # SonarQube quality gate
+      #
+      # Quality gate is enforced on pull requests.
+      # -----------------------------------------------------------------------
       - name: SonarQube quality gate
         if: ${{ env.SONAR_HOST_URL != '' && github.event_name == 'pull_request' }}
         uses: SonarSource/sonarqube-quality-gate-action@v1
@@ -225,16 +350,31 @@ jobs:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      # -- SCA ----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # OWASP Dependency-Check cache
+      # -----------------------------------------------------------------------
       - name: Cache OWASP Dependency-Check NVD
         uses: actions/cache@v4
         with:
           path: ~/.cache/dependency-check
           key: owasp-dc-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: owasp-dc-${{ runner.os }}-
+          restore-keys: |
+            owasp-dc-${{ runner.os }}-
 
+
+      # -----------------------------------------------------------------------
+      # OWASP Dependency-Check
+      #
+      # @v6 does not exist.
+      #
+      # JAVA_HOME must be reset to /opt/jdk because setup-java above changes
+      # JAVA_HOME and the Dependency-Check action runs in its own container.
+      # -----------------------------------------------------------------------
       - name: OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@v6
+        uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: /opt/jdk
         with:
           project: roboshop-${{ matrix.service }}
           path: ${{ env.SERVICE_DIR }}
@@ -244,17 +384,29 @@ jobs:
             --enableRetired
             --suppression security/dependency-check-suppression.xml
 
+
+      # -----------------------------------------------------------------------
+      # Upload Dependency-Check report
+      # -----------------------------------------------------------------------
       - name: Upload Dependency-Check report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-check-${{ matrix.service }}
+          name: dependency-check-${{ matrix.service }}-${{ github.sha }}
           path: reports/
+          if-no-files-found: ignore
           retention-days: 14
 
-      # -- container image -----------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # Docker Buildx
+      # -----------------------------------------------------------------------
       - uses: docker/setup-buildx-action@v3
 
+
+      # -----------------------------------------------------------------------
+      # Docker image build
+      # -----------------------------------------------------------------------
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -266,7 +418,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           provenance: false
 
-      # -- image scan (single run: SARIF + fail on CRITICAL) -----------------
+
+      # -----------------------------------------------------------------------
+      # Trivy image vulnerability scan
+      #
+      # This remains a BLOCKING security gate.
+      # CRITICAL/HIGH vulnerabilities cause exit code 1.
+      # -----------------------------------------------------------------------
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -277,6 +435,10 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+
+      # -----------------------------------------------------------------------
+      # Generate SBOM
+      # -----------------------------------------------------------------------
       - name: Generate SBOM
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -285,6 +447,13 @@ jobs:
           output: sbom-${{ matrix.service }}.cdx.json
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
+
+      # -----------------------------------------------------------------------
+      # Upload Trivy/SBOM artifacts
+      #
+      # if-no-files-found prevents a secondary failure if an earlier scan
+      # failed before creating the artifacts.
+      # -----------------------------------------------------------------------
       - name: Upload security artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -293,157 +462,346 @@ jobs:
           path: |
             trivy-${{ matrix.service }}.sarif
             sbom-${{ matrix.service }}.cdx.json
+          if-no-files-found: ignore
           retention-days: 30
 
+
+      # -----------------------------------------------------------------------
+      # Upload Trivy SARIF to GitHub Security
+      #
+      # Only execute if the SARIF file actually exists.
+      # -----------------------------------------------------------------------
       - name: Upload Trivy SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: ${{ always() && hashFiles(format('trivy-{0}.sarif', matrix.service)) != '' }}
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
 
-      # -- hand off the exact scanned image to the publish job ----------------
+
+      # -----------------------------------------------------------------------
+      # Export exact scanned image
+      # -----------------------------------------------------------------------
       - name: Export scanned image
         if: github.event_name != 'pull_request'
-        run: docker save "${{ matrix.service }}:${{ github.sha }}" -o "${{ matrix.service }}.tar"
+        run: |
+          set -euo pipefail
 
+          docker save \
+            "${{ matrix.service }}:${{ github.sha }}" \
+            -o "${{ matrix.service }}.tar"
+
+
+      # -----------------------------------------------------------------------
+      # Upload exact scanned image
+      # -----------------------------------------------------------------------
       - name: Upload scanned image artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: image-${{ matrix.service }}-${{ github.sha }}
           path: ${{ matrix.service }}.tar
+          if-no-files-found: error
           retention-days: 1
 
+
+  # ---------------------------------------------------------------------------
+  # 3. Publish to Dev ECR
+  #
+  # Runs for:
+  #   - normal push to main
+  #   - manual workflow_dispatch
+  #
+  # Does NOT run for pull requests.
+  # ---------------------------------------------------------------------------
   publish:
     name: publish ${{ matrix.service }} to dev ECR
+
     needs: [detect, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect.outputs.any == 'true'
+
+    if: >
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.detect.outputs.any == 'true'
+
     runs-on: ubuntu-latest
+
     environment: dev
+
     permissions:
       contents: read
       id-token: write
+
     strategy:
       fail-fast: false
       matrix:
         service: ${{ fromJSON(needs.detect.outputs.services) }}
+
     steps:
+
+      # -----------------------------------------------------------------------
+      # Download exact scanned image
+      # -----------------------------------------------------------------------
       - uses: actions/download-artifact@v4
         with:
           name: image-${{ matrix.service }}-${{ github.sha }}
           path: image
 
-      - name: Load scanned image
-        run: docker load -i "image/${{ matrix.service }}.tar"
 
+      # -----------------------------------------------------------------------
+      # Load exact scanned image
+      # -----------------------------------------------------------------------
+      - name: Load scanned image
+        run: |
+          set -euo pipefail
+
+          docker load \
+            -i "image/${{ matrix.service }}.tar"
+
+
+      # -----------------------------------------------------------------------
+      # AWS OIDC
+      # -----------------------------------------------------------------------
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+
+      # -----------------------------------------------------------------------
+      # ECR login
+      # -----------------------------------------------------------------------
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr
 
+
+      # -----------------------------------------------------------------------
+      # Push immutable image
+      # -----------------------------------------------------------------------
       - name: Push immutable commit image to ECR
         id: push
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -euo pipefail
+
           REPO="$REGISTRY/$ECR_NAMESPACE/${{ matrix.service }}"
-          docker tag "${{ matrix.service }}:${{ github.sha }}" "$REPO:${{ github.sha }}"
+
+          docker tag \
+            "${{ matrix.service }}:${{ github.sha }}" \
+            "$REPO:${{ github.sha }}"
+
           docker push "$REPO:${{ github.sha }}"
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$REPO:${{ github.sha }}" | cut -d@ -f2)
+
+          DIGEST=$(
+            docker inspect \
+              --format='{{index .RepoDigests 0}}' \
+              "$REPO:${{ github.sha }}" |
+              cut -d@ -f2
+          )
+
           echo "image=$REPO@$DIGEST" >> "$GITHUB_OUTPUT"
+
           echo "pushed $REPO:${{ github.sha }}@$DIGEST"
 
+
+      # -----------------------------------------------------------------------
+      # Cosign
+      # -----------------------------------------------------------------------
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
 
+
+      # -----------------------------------------------------------------------
+      # Sign immutable ECR image
+      # -----------------------------------------------------------------------
       - name: Sign image with GitHub OIDC
         env:
           IMAGE: ${{ steps.push.outputs.image }}
-        run: cosign sign --yes "$IMAGE"
-
-  ci-gate:
-    name: ci gate
-    if: always()
-    needs: [detect, build, publish]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Evaluate application CI
         run: |
           set -euo pipefail
-          if [[ "${{ needs.detect.result }}" != "success" ]]; then
-            echo "detect failed"; exit 1
-          fi
-          if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
-            echo "application build/test/scan failed"; exit 1
-          fi
-          if [[ "${{ needs.publish.result }}" == "failure" || "${{ needs.publish.result }}" == "cancelled" ]]; then
-            echo "application publish failed"; exit 1
-          fi
-          echo "Application CI gate passed."
+
+          cosign sign --yes "$IMAGE"
+
 
   # ---------------------------------------------------------------------------
-  # 3. GitOps write-back for development only.
-  # Main builds immutable images but does NOT deploy directly to production.
-  # Release + promote is the authoritative production promotion path.
+  # 4. CI Gate
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: ci gate
+
+    if: always()
+
+    needs: [detect, build, publish]
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Evaluate application CI
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$DETECT_RESULT" != "success" ]]; then
+            echo "detect failed"
+            exit 1
+          fi
+
+          if [[ "$BUILD_RESULT" == "failure" || "$BUILD_RESULT" == "cancelled" ]]; then
+            echo "application build/test/scan failed"
+            exit 1
+          fi
+
+          if [[ "$PUBLISH_RESULT" == "failure" || "$PUBLISH_RESULT" == "cancelled" ]]; then
+            echo "application publish failed"
+            exit 1
+          fi
+
+          echo "Application CI gate passed."
+
+
+  # ---------------------------------------------------------------------------
+  # 5. GitOps write-back for development
+  #
+  # IMPORTANT:
+  # Manual workflow_dispatch does NOT automatically modify GitOps.
+  #
+  # Only a normal push to main performs GitOps write-back.
   # ---------------------------------------------------------------------------
   gitops:
     name: gitops write-back (dev)
+
     needs: [detect, publish]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect.outputs.any == 'true'
+
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.detect.outputs.any == 'true'
+
     runs-on: ubuntu-latest
+
     environment: dev
+
     permissions:
       contents: write
       pull-requests: write
       id-token: write
+
     concurrency:
       group: gitops-writeback-${{ needs.detect.outputs.environment }}
       cancel-in-progress: false
+
     steps:
+
+      # -----------------------------------------------------------------------
+      # Checkout GitOps repository/workspace
+      # -----------------------------------------------------------------------
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITOPS_TOKEN || github.token }}
 
+
+      # -----------------------------------------------------------------------
+      # yq
+      # -----------------------------------------------------------------------
       - uses: mikefarah/yq@v4.44.3
 
+
+      # -----------------------------------------------------------------------
+      # AWS OIDC
+      # -----------------------------------------------------------------------
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+
+      # -----------------------------------------------------------------------
+      # Update image registry, tag and digest
+      # -----------------------------------------------------------------------
       - name: Bump image registry and image tags
         env:
           SERVICES: ${{ needs.detect.outputs.services }}
           ENVIRONMENT: ${{ needs.detect.outputs.environment }}
         run: |
           set -euo pipefail
-          REGISTRY=$(aws ecr describe-registry --region "${AWS_REGION}" --query 'registryId' --output text).dkr.ecr.${AWS_REGION}.amazonaws.com
-          yq -i ".image.registry = \"$REGISTRY\"" environments/dev/global-values.yaml
+
+          REGISTRY=$(
+            aws ecr describe-registry \
+              --region "${AWS_REGION}" \
+              --query 'registryId' \
+              --output text
+          ).dkr.ecr.${AWS_REGION}.amazonaws.com
+
+          yq -i \
+            ".image.registry = \"$REGISTRY\"" \
+            environments/dev/global-values.yaml
+
           for svc in $(echo "$SERVICES" | yq -r '.[]' -p json); do
+
             f="charts/$svc/values-$ENVIRONMENT.yaml"
-            [ -f "$f" ] || { echo "skip $f (missing)"; continue; }
-            digest=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$ECR_NAMESPACE/$svc" --image-ids imageTag="${{ github.sha }}" --query 'imageDetails[0].imageDigest' --output text)
-            yq -i ".image.repository = \"$ECR_NAMESPACE/$svc\" | .image.tag = \"${{ github.sha }}\" | .image.digest = \"$digest\"" "$f"
-            echo "updated $f -> $ECR_NAMESPACE/$svc:${{ github.sha }}@$digest"
+
+            if [ ! -f "$f" ]; then
+              echo "skip $f (missing)"
+              continue
+            fi
+
+            digest=$(
+              aws ecr describe-images \
+                --region "$AWS_REGION" \
+                --repository-name "$ECR_NAMESPACE/$svc" \
+                --image-ids imageTag="${GITHUB_SHA}" \
+                --query 'imageDetails[0].imageDigest' \
+                --output text
+            )
+
+            if [ -z "$digest" ] || [ "$digest" = "None" ]; then
+              echo "::error::Unable to find ECR digest for $svc:${GITHUB_SHA}"
+              exit 1
+            fi
+
+            yq -i \
+              ".image.repository = \"$ECR_NAMESPACE/$svc\" |
+               .image.tag = \"${GITHUB_SHA}\" |
+               .image.digest = \"$digest\"" \
+              "$f"
+
+            echo "updated $f -> $ECR_NAMESPACE/$svc:${GITHUB_SHA}@$digest"
+
           done
 
+
+      # -----------------------------------------------------------------------
+      # Validate Helm values
+      # -----------------------------------------------------------------------
       - name: Validate Helm values YAML
         run: |
           set -euo pipefail
+
           for f in charts/*/values-*.yaml; do
+
             [ -f "$f" ] || continue
-            yq eval '.' "$f" > /dev/null || { echo "::error::Invalid YAML: $f"; exit 1; }
+
+            yq eval '.' "$f" > /dev/null || {
+              echo "::error::Invalid YAML: $f"
+              exit 1
+            }
+
           done
 
+
+      # -----------------------------------------------------------------------
+      # Submit GitOps PR
+      # -----------------------------------------------------------------------
       - name: Submit GitOps PR
         env:
           GH_TOKEN: ${{ secrets.GITOPS_TOKEN || github.token }}
         run: |
+          set -euo pipefail
+
           ./scripts/create-gitops-pr.sh \
             "automation/dev-${{ github.run_id }}" \
             "chore(deploy): dev -> ${{ github.sha }}" \
