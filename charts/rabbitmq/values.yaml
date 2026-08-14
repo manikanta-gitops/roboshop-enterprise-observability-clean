@@ -68,6 +68,13 @@ initContainers:
     volumeMounts:
       - name: data
         mountPath: /var/lib/rabbitmq
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
 
 # Plain environment variables (service specific application config).
 env: {}
