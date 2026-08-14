@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit hook: auto-format staged Terraform before it can be committed.
+set -euo pipefail
+
+command -v terraform >/dev/null 2>&1 || {
+  echo "terraform is required for the pre-commit format check"
+  exit 1
+}
+
+# Collect Terraform files staged for commit (skip deletions and .terraform/).
+mapfile -d '' files < <(
+  git diff --cached --name-only -z --diff-filter=ACM \
+    -- ':(glob)*.tf' ':(glob)*.tfvars' ':!**/.terraform/**'
+)
+
+if [ "${#files[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+# Auto-format in place, then re-stage the formatted results.
+terraform fmt "${files[@]}"
+git add -- "${files[@]}"
+
+# Final guard: nothing unformatted may leave this commit.
+if ! terraform fmt -check "${files[@]}" >/dev/null; then
+  echo "pre-commit: Terraform is still unformatted after 'terraform fmt'."
+  echo "Fix and retry: git add -A && git commit"
+  exit 1
+fi
