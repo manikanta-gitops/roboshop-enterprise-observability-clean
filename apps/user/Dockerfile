@@ -12,6 +12,12 @@ ENV NODE_ENV=production
 EXPOSE 8080
 COPY --from=builder /app /app
 RUN addgroup -S roboshop && adduser -S roboshop -G roboshop && \
+    rm -rf \
+      /usr/local/lib/node_modules/npm \
+      /usr/local/lib/node_modules/corepack \
+      /opt/yarn* \
+      /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/yarn /usr/local/bin/corepack && \
     chown -R roboshop:roboshop /app
 USER roboshop
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
