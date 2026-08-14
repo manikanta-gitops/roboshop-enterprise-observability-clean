@@ -22,4 +22,11 @@
     <cvssBelow>9.0</cvssBelow>
   </suppress>
 
+  <!-- False positive: @redis/bloom is a JavaScript client wrapper; RedisBloom
+       is not deployed. -->
+  <suppress>
+    <packageUrl regex="true">^pkg:npm/%40redis/bloom@1\.2\.0$</packageUrl>
+    <cve>CVE-2026-25589</cve>
+  </suppress>
+
 </suppressions>
