@@ -6,7 +6,6 @@ namespaceResource:
   create: true
   labels:
     name: roboshop-staging
-    roboshop.io/environment: staging
 
 resourceQuota:
   enabled: true
