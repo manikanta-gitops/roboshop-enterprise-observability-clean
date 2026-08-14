@@ -18,3 +18,4 @@ spec:
       interval: {{ .Values.serviceMonitor.interval | default "30s" | quote }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout | default "10s" | quote }}
 {{- end -}}
+{{- end -}}
