@@ -17,6 +17,6 @@
     "mongodb": "^6.21.0",
     "pino": "^9.6.0",
     "pino-http": "^11.0.0",
-    "@instana/collector": "^6.5.0"
+    "@instana/collector": "^6.6.1"
   }
 }
