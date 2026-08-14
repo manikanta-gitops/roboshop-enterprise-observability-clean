@@ -77,8 +77,8 @@ module "ecr" {
   image_tag_mutability = "IMMUTABLE" # commit SHA tags are never overwritten; no mutable dev release tag
   keep_last_images     = 15
   # Chart repositories are published once, from the production account stack.
-  pull_principal_arns  = [module.eks.node_role_arn]
-  tags                 = local.tags
+  pull_principal_arns = [module.eks.node_role_arn]
+  tags                = local.tags
 }
 
 module "github_oidc" {

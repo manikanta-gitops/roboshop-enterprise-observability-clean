@@ -171,7 +171,7 @@ resource "aws_eks_node_group" "this" {
   node_group_name = "${local.name}-ng"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.private_subnet_ids
-  ami_type = "AL2023_x86_64_STANDARD"
+  ami_type        = "AL2023_x86_64_STANDARD"
 
   capacity_type  = var.node_capacity_type
   instance_types = var.node_instance_types
@@ -193,8 +193,8 @@ resource "aws_eks_node_group" "this" {
 
   tags = merge(var.tags, {
     # Consumed by cluster-autoscaler / karpenter if added later.
-    "k8s.io/cluster-autoscaler/enabled"           = "true"
-    "k8s.io/cluster-autoscaler/${local.name}"     = "owned"
+    "k8s.io/cluster-autoscaler/enabled"       = "true"
+    "k8s.io/cluster-autoscaler/${local.name}" = "owned"
   })
 
   lifecycle {

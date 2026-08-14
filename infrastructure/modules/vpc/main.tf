@@ -40,10 +40,10 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = merge(var.tags, {
-    Name                                        = "${local.name}-public-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/elb"                    = "1"
-    "kubernetes.io/cluster/${local.name}"       = "shared"
-    "roboshop.io/tier"                          = "public"
+    Name                                  = "${local.name}-public-${var.availability_zones[count.index]}"
+    "kubernetes.io/role/elb"              = "1"
+    "kubernetes.io/cluster/${local.name}" = "shared"
+    "roboshop.io/tier"                    = "public"
   })
 }
 

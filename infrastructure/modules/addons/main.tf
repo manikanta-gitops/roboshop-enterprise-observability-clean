@@ -98,8 +98,8 @@ data "aws_iam_policy_document" "external_secrets" {
   }
 
   statement {
-    effect  = "Allow"
-    actions = ["secretsmanager:ListSecrets"]
+    effect    = "Allow"
+    actions   = ["secretsmanager:ListSecrets"]
     resources = ["*"]
   }
 
@@ -247,7 +247,7 @@ resource "helm_release" "argocd" {
         "server.insecure" = true
       }
       cm = {
-        "timeout.reconciliation" = "180s"
+        "timeout.reconciliation"             = "180s"
         "application.resourceTrackingMethod" = "annotation"
       }
     }
