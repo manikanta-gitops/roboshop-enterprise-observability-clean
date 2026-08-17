@@ -432,8 +432,8 @@ jobs:
       # default (it unsets TRIVY_SEVERITY so GitHub Code Scanning sees every
       # severity). That made this gate fail on LOW/MEDIUM-only findings even
       # when the image had zero actionable CRITICAL/HIGH vulnerabilities.
-      # `limit-severities-for-sarif: true` makes the SARIF scan honor the same
-      # severity policy as the human-readable report. The gate stays blocking:
+      # `limit-severities-for-sarif: true` makes the SARIF scan honor the
+      # configured severity policy. The gate stays blocking:
       # severity CRITICAL,HIGH / ignore-unfixed true / exit-code 1.
       # -----------------------------------------------------------------------
       - name: Trivy image scan
@@ -446,51 +446,6 @@ jobs:
           ignore-unfixed: true
           limit-severities-for-sarif: 'true'
           exit-code: '1'
-
-
-      # -----------------------------------------------------------------------
-      # Trivy human-readable vulnerability report (MongoDB only)
-      #
-      # NON-BLOCKING and scoped to MongoDB. Produces a table report exposing
-      # CVE ID, severity, package/component, installed version, fixed version
-      # and vulnerability title. Runs even when the blocking gate above fails
-      # so the complete MongoDB vulnerability list is available for review.
-      # The security gate itself is unchanged.
-      # -----------------------------------------------------------------------
-      - name: Trivy MongoDB human-readable report
-        if: always() && matrix.service == 'mongodb'
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ matrix.service }}:${{ github.sha }}
-          format: table
-          output: trivy-${{ matrix.service }}-report.txt
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-          exit-code: '0'
-
-      - name: Show MongoDB Trivy report
-        if: always() && matrix.service == 'mongodb'
-        run: |
-          set +e
-          if [ -f "trivy-${{ matrix.service }}-report.txt" ]; then
-            cat "trivy-${{ matrix.service }}-report.txt"
-          else
-            echo "::warning::MongoDB Trivy report file not found"
-          fi
-
-
-      # -----------------------------------------------------------------------
-      # Upload MongoDB human-readable report
-      # -----------------------------------------------------------------------
-      - name: Upload MongoDB Trivy report
-        if: always() && matrix.service == 'mongodb'
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-${{ matrix.service }}-report-${{ github.sha }}
-          path: trivy-${{ matrix.service }}-report.txt
-          if-no-files-found: ignore
-          retention-days: 30
 
 
       # -----------------------------------------------------------------------
