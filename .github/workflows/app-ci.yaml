@@ -559,6 +559,20 @@ jobs:
 
 
       # -----------------------------------------------------------------------
+      # TEMPORARY DIAGNOSTIC - prints ONLY safe OIDC claim metadata (iss, aud,
+      # sub). Does NOT print the JWT/token or signature. Remove after diagnosis.
+      # -----------------------------------------------------------------------
+      - name: TEMP print OIDC claim metadata
+        run: |
+          set -euo pipefail
+          TOKEN="$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')"
+          PAYLOAD="$(python3 -c "import sys,base64,json;p=sys.argv[1].split('.')[1];p+='='*(-len(p)%4);print(json.dumps(json.loads(base64.urlsafe_b64decode(p))))" "$TOKEN")"
+          python3 -c "import sys,json;d=json.loads(sys.argv[1]);print('iss='+str(d.get('iss')));print('aud='+str(d.get('aud')));print('sub='+str(d.get('sub')))" "$PAYLOAD"
+
+
+      # -----------------------------------------------------------------------
       # AWS OIDC
       # -----------------------------------------------------------------------
       - uses: aws-actions/configure-aws-credentials@v4
