@@ -1,7 +1,9 @@
 # Stan's Robot Shop - frontend
 # Static AngularJS SPA served by nginx, running unprivileged on port 8080 so
 # the pod can use a restricted securityContext behind the AWS ALB.
-FROM nginx:1.27-alpine
+FROM nginx:alpine
+
+RUN apk upgrade --no-cache
 
 RUN rm -f /etc/nginx/nginx.conf /etc/nginx/conf.d/default.conf /usr/share/nginx/html/index.html
 
