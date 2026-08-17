@@ -32,6 +32,7 @@ on:
         type: choice
         default: auto
         options:
+          - all
           - auto
           - cart
           - catalogue
@@ -92,7 +93,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "$DISPATCH_SERVICE" ] && [ "$DISPATCH_SERVICE" != "auto" ]; then
+          if [ "$DISPATCH_SERVICE" = "all" ]; then
+            SERVICES='["cart","catalogue","user","payment","shipping","frontend","mongodb","mysql"]'
+          elif [ -n "$DISPATCH_SERVICE" ] && [ "$DISPATCH_SERVICE" != "auto" ]; then
             SERVICES=$(printf '["%s"]' "$DISPATCH_SERVICE")
           else
             SERVICES="$DETECTED_SERVICES"
