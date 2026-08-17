@@ -427,6 +427,14 @@ jobs:
       #
       # This remains a BLOCKING security gate.
       # CRITICAL/HIGH vulnerabilities cause exit code 1.
+      #
+      # trivy-action's SARIF mode ignores the configured `severity` filter by
+      # default (it unsets TRIVY_SEVERITY so GitHub Code Scanning sees every
+      # severity). That made this gate fail on LOW/MEDIUM-only findings even
+      # when the image had zero actionable CRITICAL/HIGH vulnerabilities.
+      # `limit-severities-for-sarif: true` makes the SARIF scan honor the same
+      # severity policy as the human-readable report. The gate stays blocking:
+      # severity CRITICAL,HIGH / ignore-unfixed true / exit-code 1.
       # -----------------------------------------------------------------------
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -436,6 +444,7 @@ jobs:
           output: trivy-${{ matrix.service }}.sarif
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
+          limit-severities-for-sarif: 'true'
           exit-code: '1'
 
 
