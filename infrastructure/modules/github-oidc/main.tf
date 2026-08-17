@@ -20,9 +20,19 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_oidc_provider_arn
 
+  # GitHub now issues immutable OIDC subject claims that embed the immutable
+  # owner and repository IDs (repo:OWNER@OWNER-ID/REPO@REPO-ID:...). When the
+  # IDs are supplied they are used; otherwise the legacy name-based format
+  # (repo:OWNER/REPO:...) is kept for backward compatibility.
+  subject_identity = (
+    var.github_org_id != "" && var.github_repo_id != ""
+    ? "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}"
+    : "repo:${var.github_org}/${var.github_repo}"
+  )
+
   # allowed_subjects contains the suffix portion of GitHub's OIDC `sub` claim,
   # e.g. `ref:refs/heads/main` or `environment:production`.
-  subjects = [for s in var.allowed_subjects : "repo:${var.github_org}/${var.github_repo}:${s}"]
+  subjects = [for s in var.allowed_subjects : "${local.subject_identity}:${s}"]
 }
 
 data "aws_iam_policy_document" "assume" {

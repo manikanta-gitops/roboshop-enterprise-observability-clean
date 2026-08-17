@@ -87,6 +87,8 @@ module "github_oidc" {
   region               = var.region
   github_org           = var.github_org
   github_repo          = var.github_repo
+  github_org_id        = var.github_org_id
+  github_repo_id       = var.github_repo_id
   role_name            = "${var.project}-${local.environment}-github-actions"
   ecr_namespace        = var.project
   create_oidc_provider = var.create_github_oidc_provider

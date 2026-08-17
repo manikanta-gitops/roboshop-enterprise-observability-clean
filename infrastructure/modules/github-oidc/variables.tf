@@ -13,6 +13,18 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_org_id" {
+  description = "Immutable GitHub owner ID used in OIDC subject claims (immutable subject format). Leave empty for the legacy name-based subject format."
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "Immutable GitHub repository ID used in OIDC subject claims (immutable subject format). Leave empty for the legacy name-based subject format."
+  type        = string
+  default     = ""
+}
+
 variable "allowed_subjects" {
   description = "Subject patterns allowed to assume the role."
   type        = list(string)

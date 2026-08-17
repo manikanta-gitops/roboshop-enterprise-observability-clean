@@ -17,6 +17,10 @@ app_namespace = "roboshop-dev"
 github_org  = "manikanta-gitops"
 github_repo = "roboshop-enterprise-observability-clean"
 
+# Immutable GitHub OIDC subject IDs (from the verified token sub claim).
+github_org_id  = "311366158"
+github_repo_id = "1332791563"
+
 create_github_oidc_provider = true
 
 argocd_domain = "argocd.streanzo.online"

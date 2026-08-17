@@ -67,6 +67,18 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_org_id" {
+  description = "Immutable GitHub owner ID for OIDC subject claims."
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "Immutable GitHub repository ID for OIDC subject claims."
+  type        = string
+  default     = ""
+}
+
 variable "create_github_oidc_provider" {
   description = "Create the GitHub OIDC provider (only once per AWS account)."
   type        = bool
