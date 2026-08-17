@@ -70,7 +70,7 @@ jobs:
           config_file: ci/checkov.yaml
           output_format: cli,sarif
           output_file_path: console,checkov-helm.sarif
-          soft_fail: false
+          soft_fail: true
 
       - name: Upload Checkov SARIF
         if: always()

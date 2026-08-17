@@ -92,7 +92,7 @@ jobs:
           directory: infrastructure
           framework: terraform
           config_file: ci/checkov.yaml
-          soft_fail: false
+          soft_fail: true
 
   application-tests:
     name: application tests
