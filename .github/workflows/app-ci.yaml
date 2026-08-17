@@ -629,6 +629,14 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Sign immutable ECR image
+      #
+      # Idempotent keyless signing. ECR repositories enforce immutable tags,
+      # and `cosign sign` writes each signature as an immutable
+      # sha256-<hex>.sig tag in the same repository. Any re-run that yields
+      # the same image digest (job reruns/retries, or workflow_dispatch on the
+      # same commit) generates a fresh signature and tries to overwrite that
+      # tag, which ECR rejects with TAG_INVALID. Detect the existing signature
+      # first and skip the duplicate write.
       # -----------------------------------------------------------------------
       - name: Sign image with GitHub OIDC
         env:
@@ -636,7 +644,52 @@ jobs:
         run: |
           set -euo pipefail
 
-          cosign sign --yes "$IMAGE"
+          # IMAGE looks like <registry>/roboshop/<svc>@sha256:<hex>
+          IMAGE_REF="${IMAGE%%@*}"                # <registry>/roboshop/<svc>
+          REPO_NAME="${IMAGE_REF#*/}"             # roboshop/<svc>
+          DIGEST="${IMAGE#*@}"                    # sha256:<hex>
+          DIGEST_HEX="${DIGEST#sha256:}"          # <hex>
+          SIGNATURE_TAG="sha256-${DIGEST_HEX}.sig"
+
+          signature_exists() {
+            aws ecr describe-images \
+              --region "${AWS_REGION}" \
+              --repository-name "${REPO_NAME}" \
+              --image-ids "imageTag=${SIGNATURE_TAG}" \
+              --output text >/dev/null 2>&1
+          }
+
+          # Already signed on a previous run -> recognize and stop instead of
+          # failing on the immutable signature tag. The describe-images probe
+          # shares the OIDC credentials/permissions with cosign, so genuine
+          # AWS failures still surface on the sign path below.
+          if signature_exists; then
+            echo "::notice::signature ${SIGNATURE_TAG} already exists for ${DIGEST} - skipping duplicate signing"
+
+            # Best-effort recognition of the existing signature (non-blocking).
+            if cosign verify \
+              --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/app-ci.yaml(?:@.*)?\$" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$IMAGE" 2>/dev/null; then
+              echo "::notice::existing signature verified for ${DIGEST}"
+            else
+              echo "::warning::existing signature present for ${DIGEST} but could not be re-verified - treating as signed"
+            fi
+
+            exit 0
+          fi
+
+          # No signature yet -> sign normally. If a concurrent run signs the
+          # same digest while this one is in flight, the signature tag now
+          # exists and the digest is signed; otherwise propagate the real
+          # signing failure (credentials, permissions, tlog, ...).
+          if ! cosign sign --yes "$IMAGE"; then
+            if signature_exists; then
+              echo "::notice::concurrent run signed ${DIGEST} - treating as signed"
+              exit 0
+            fi
+            exit 1
+          fi
 
 
   # ---------------------------------------------------------------------------

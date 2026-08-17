@@ -95,6 +95,20 @@ jobs:
           set -euo pipefail
           for svc in $SERVICES; do
             digest=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$ECR_NAMESPACE/$svc" --image-ids imageTag="$VERSION" --query 'imageDetails[0].imageDigest' --output text)
+
+            # Idempotent keyless signing: ECR tags are immutable, so a release
+            # re-run for the same digest must skip the duplicate signature
+            # write (sha256-<hex>.sig) instead of failing with TAG_INVALID.
+            signature_tag="sha256-${digest#sha256:}.sig"
+            if aws ecr describe-images \
+                --region "$AWS_REGION" \
+                --repository-name "$ECR_NAMESPACE/$svc" \
+                --image-ids "imageTag=${signature_tag}" \
+                --output text >/dev/null 2>&1; then
+              echo "signature ${signature_tag} already exists for ${digest} - skipping duplicate signing"
+              continue
+            fi
+
             cosign sign --yes "$REGISTRY/$ECR_NAMESPACE/$svc@$digest"
           done
 
