@@ -1,0 +1,17 @@
+# Scoped vendor-image suppressions for the official mysql image.
+#
+# These CRITICAL/HIGH findings are NOT actionable from this application:
+#   - The official mysql:8.4 image ships a PREBUILT gosu 1.19 binary compiled
+#     upstream with Go 1.24.6. Trivy's gobinary scanner flags its embedded Go
+#     stdlib CVEs (incl. CVE-2025-68121) and the pinned golang.org/x/sys v0.1.0
+#     advisory (GO-2026-5024 / CVE-2026-39824, fixed in x/sys 0.44.0).
+#   - gosu is required by the official docker-entrypoint.sh for privilege drop
+#     and cannot be patched without rebuilding the vendor image, which is out
+#     of scope for this portfolio project.
+#   - No fix is available in any newer official mysql:8.4.x patch image.
+#
+# Policy: the Trivy gate stays enabled (severity CRITICAL,HIGH,
+# ignore-unfixed true, exit-code 1) for everything NOT listed here.
+CVE-2025-68121
+GO-2026-5024
+CVE-2026-39824
