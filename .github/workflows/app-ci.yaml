@@ -446,6 +446,10 @@ jobs:
           ignore-unfixed: true
           limit-severities-for-sarif: 'true'
           exit-code: '1'
+          # Explicitly apply the repo-scoped vendor-image exception list
+          # (.trivyignore). Kept per-service; the gate stays blocking for any
+          # CRITICAL/HIGH finding not listed there.
+          trivyignores: .trivyignore
 
 
       # -----------------------------------------------------------------------
