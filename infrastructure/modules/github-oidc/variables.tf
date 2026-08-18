@@ -84,3 +84,9 @@ variable "terraform_lock_table" {
   type        = string
   default     = ""
 }
+
+variable "terraform_state_region" {
+  description = "AWS region of the Terraform state backend (S3 bucket and DynamoDB lock table). May differ from var.region, which is the application region. Empty to fall back to var.region."
+  type        = string
+  default     = ""
+}

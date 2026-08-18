@@ -97,6 +97,7 @@ module "github_oidc" {
   terraform_state_bucket = "roboshop-terraform-state-704475327673"
   terraform_state_key    = "dev/terraform.tfstate"
   terraform_lock_table   = "roboshop-tf-locks"
+  terraform_state_region = "us-east-1"
 }
 
 module "addons" {

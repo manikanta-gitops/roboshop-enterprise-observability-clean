@@ -178,7 +178,7 @@ data "aws_iam_policy_document" "ci" {
       ]
 
       resources = [
-        "arn:${data.aws_partition.current.partition}:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.terraform_lock_table}",
+        "arn:${data.aws_partition.current.partition}:dynamodb:${coalesce(var.terraform_state_region, var.region)}:${data.aws_caller_identity.current.account_id}:table/${var.terraform_lock_table}",
       ]
     }
   }
