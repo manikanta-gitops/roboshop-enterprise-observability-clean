@@ -197,6 +197,7 @@ data "aws_iam_policy_document" "ci" {
 
       actions = [
         "ecr:ListTagsForResource",
+        "ecr:GetLifecyclePolicy",
       ]
 
       resources = [
@@ -214,6 +215,7 @@ data "aws_iam_policy_document" "ci" {
       actions = [
         "iam:GetRole",
         "iam:GetOpenIDConnectProvider",
+        "iam:ListRolePolicies",
       ]
 
       resources = [
@@ -240,11 +242,24 @@ data "aws_iam_policy_document" "ci" {
   dynamic "statement" {
     for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
     content {
+      sid    = "TfPlanReadLogsTags"
+      effect = "Allow"
+
+      # Scoped to the EKS control-plane log group this stack creates.
+      actions   = ["logs:ListTagsForResource"]
+      resources = ["arn:${data.aws_partition.current.partition}:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/eks/${local.role_prefix}/cluster:*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
       sid    = "TfPlanReadKms"
       effect = "Allow"
 
       actions = [
         "kms:DescribeKey",
+        "kms:GetKeyPolicy",
       ]
 
       resources = [
@@ -264,6 +279,8 @@ data "aws_iam_policy_document" "ci" {
       actions = [
         "ec2:DescribeVpcs",
         "ec2:DescribeAddresses",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeAddressesAttribute",
       ]
 
       resources = ["*"]
