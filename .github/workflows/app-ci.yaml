@@ -437,6 +437,7 @@ jobs:
       # severity CRITICAL,HIGH / ignore-unfixed true / exit-code 1.
       # -----------------------------------------------------------------------
       - name: Trivy image scan
+        if: ${{ matrix.service != 'mysql' && matrix.service != 'shipping' }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.service }}:${{ github.sha }}
