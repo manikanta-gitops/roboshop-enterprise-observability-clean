@@ -20,6 +20,10 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_oidc_provider_arn
 
+  # Prefix shared by every IAM role this stack creates (eks-cluster, eks-node,
+  # ebs-csi, alb-controller, external-secrets, cluster-autoscaler, github-actions).
+  role_prefix = trimsuffix(var.role_name, "-github-actions")
+
   # GitHub now issues immutable OIDC subject claims that embed the immutable
   # owner and repository IDs (repo:OWNER@OWNER-ID/REPO@REPO-ID:...). When the
   # IDs are supplied they are used; otherwise the legacy name-based format
@@ -176,6 +180,93 @@ data "aws_iam_policy_document" "ci" {
       resources = [
         "arn:${data.aws_partition.current.partition}:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.terraform_lock_table}",
       ]
+    }
+  }
+
+  # ------------------------------------------------------------------------- #
+  # Minimum read/refresh permissions so `terraform plan` can refresh the
+  # resources managed by this stack. Scoped to this account/region and to the
+  # roles the stack itself creates. Only granted together with backend access
+  # (i.e. the dev role); production passes no state vars and is unchanged.
+  # ------------------------------------------------------------------------- #
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadEcr"
+      effect = "Allow"
+
+      actions = [
+        "ecr:ListTagsForResource",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/${var.ecr_namespace}/*",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadIam"
+      effect = "Allow"
+
+      actions = [
+        "iam:GetRole",
+        "iam:GetOpenIDConnectProvider",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_prefix}-*",
+        "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
+        "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/oidc.eks.${var.region}.amazonaws.com/id/*",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadLogs"
+      effect = "Allow"
+
+      # CloudWatch Logs Describe* actions do not support resource-level
+      # permissions, so AWS requires "*" for this read action.
+      actions   = ["logs:DescribeLogGroups"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadKms"
+      effect = "Allow"
+
+      actions = [
+        "kms:DescribeKey",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:kms:${var.region}:${data.aws_caller_identity.current.account_id}:key/*",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadEc2"
+      effect = "Allow"
+
+      # EC2 Describe* actions do not support resource-level permissions, so
+      # AWS requires "*" for these read actions.
+      actions = [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeAddresses",
+      ]
+
+      resources = ["*"]
     }
   }
 }
