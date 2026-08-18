@@ -91,7 +91,7 @@ jobs:
       group: terraform-plan-${{ matrix.environment }}
       cancel-in-progress: false
     strategy:
-       fail-fast: false
+      fail-fast: false
       matrix:
         environment: [dev, production]
     steps:
