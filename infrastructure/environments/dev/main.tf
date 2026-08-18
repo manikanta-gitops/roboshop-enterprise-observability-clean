@@ -93,6 +93,10 @@ module "github_oidc" {
   ecr_namespace        = var.project
   create_oidc_provider = var.create_github_oidc_provider
   tags                 = local.tags
+
+  terraform_state_bucket = "roboshop-terraform-state-704475327673"
+  terraform_state_key    = "dev/terraform.tfstate"
+  terraform_lock_table   = "roboshop-tf-locks"
 }
 
 module "addons" {

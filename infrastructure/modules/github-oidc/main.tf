@@ -125,6 +125,59 @@ data "aws_iam_policy_document" "ci" {
 
     resources = ["*"]
   }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfStateBucket"
+      effect = "Allow"
+
+      actions = [
+        "s3:ListBucket",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:s3:::${var.terraform_state_bucket}",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfStateObject"
+      effect = "Allow"
+
+      actions = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:s3:::${var.terraform_state_bucket}/${var.terraform_state_key}",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_lock_table != "" ? [1] : []
+    content {
+      sid    = "TfStateLock"
+      effect = "Allow"
+
+      actions = [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:dynamodb:${var.region}:${data.aws_caller_identity.current.account_id}:table/${var.terraform_lock_table}",
+      ]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "ci" {

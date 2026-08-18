@@ -66,3 +66,21 @@ variable "additional_ecr_read_repository_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "terraform_state_bucket" {
+  description = "S3 bucket storing Terraform state the CI role must read/write. Empty to grant no state access."
+  type        = string
+  default     = ""
+}
+
+variable "terraform_state_key" {
+  description = "S3 object key (state file) inside terraform_state_bucket. Ignored when terraform_state_bucket is empty."
+  type        = string
+  default     = ""
+}
+
+variable "terraform_lock_table" {
+  description = "DynamoDB lock table used by the Terraform backend. Empty to grant no lock table access."
+  type        = string
+  default     = ""
+}
