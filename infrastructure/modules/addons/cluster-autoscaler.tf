@@ -25,7 +25,10 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
       "eks:DescribeNodegroup",
     ]
 
-    resources = ["*"]
+    resources = [
+      "arn:aws:autoscaling:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*",
+      "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:nodegroup/${var.cluster_name}/*",
+    ]
   }
 
   # Write actions are limited to ASGs that belong to this cluster.
@@ -38,7 +41,9 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
       "autoscaling:UpdateAutoScalingGroup",
     ]
 
-    resources = ["*"]
+    resources = [
+      "arn:aws:autoscaling:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*",
+    ]
 
     condition {
       test     = "StringEquals"

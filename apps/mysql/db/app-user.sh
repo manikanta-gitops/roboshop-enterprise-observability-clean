@@ -9,8 +9,8 @@ escaped="${MYSQL_SHIPPING_PASSWORD//\\/\\\\}"
 escaped="${escaped//\'/\'\'}"
 
 mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
-CREATE USER IF NOT EXISTS 'shipping'@'%' IDENTIFIED WITH mysql_native_password BY '$escaped';
-ALTER USER 'shipping'@'%' IDENTIFIED WITH mysql_native_password BY '$escaped';
+CREATE USER IF NOT EXISTS 'shipping'@'%' IDENTIFIED WITH caching_sha2_password BY '$escaped';
+ALTER USER 'shipping'@'%' IDENTIFIED WITH caching_sha2_password BY '$escaped';
 GRANT ALL ON cities.* TO 'shipping'@'%';
 FLUSH PRIVILEGES;
 SQL

@@ -67,10 +67,25 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
 
     filter {}
 
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+
     noncurrent_version_expiration {
       noncurrent_days = 90
     }
   }
+}
+
+resource "aws_kms_key" "state" {
+  description             = "Terraform state and lock table encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "state" {
+  name          = "alias/${var.project}-tfstate"
+  target_key_id = aws_kms_key.state.key_id
 }
 
 resource "aws_dynamodb_table" "lock" {
@@ -81,6 +96,11 @@ resource "aws_dynamodb_table" "lock" {
   attribute {
     name = "LockID"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.state.arn
   }
 
   point_in_time_recovery {

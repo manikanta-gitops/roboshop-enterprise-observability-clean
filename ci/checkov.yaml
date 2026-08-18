@@ -8,6 +8,10 @@ skip-check:
   # Image digest pinning is enforced at release time by the CD pipeline, which
   # resolves tags to digests; charts keep human-readable tags in Git.
   - CKV_K8S_43
+  # CKV_AWS_166: Backup Vault encryption uses the AWS-managed backup KMS key.
+  # Customer-managed KMS encryption is intentionally deferred to avoid adding
+  # KMS key lifecycle, rotation, and recovery-management complexity.
+  - CKV_AWS_166
 framework:
   - kubernetes
 compact: true
