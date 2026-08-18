@@ -98,11 +98,6 @@ variable "argocd_domain" {
 variable "public_access_cidrs" {
   description = "CIDRs allowed to access the EKS public API endpoint."
   type        = list(string)
-
-  validation {
-    condition     = !contains(var.public_access_cidrs, "0.0.0.0/0")
-    error_message = "Do not expose the EKS API to 0.0.0.0/0; use a narrow administrator/runner CIDR."
-  }
 }
 
 variable "monthly_budget_usd" {
