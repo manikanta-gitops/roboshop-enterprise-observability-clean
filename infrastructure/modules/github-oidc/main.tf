@@ -198,6 +198,7 @@ data "aws_iam_policy_document" "ci" {
       actions = [
         "ecr:ListTagsForResource",
         "ecr:GetLifecyclePolicy",
+        "ecr:GetRepositoryPolicy",
       ]
 
       resources = [
@@ -264,6 +265,7 @@ data "aws_iam_policy_document" "ci" {
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "kms:GetKeyRotationStatus",
+        "kms:ListResourceTags",
       ]
 
       resources = [
@@ -282,16 +284,69 @@ data "aws_iam_policy_document" "ci" {
       # AWS requires "*" for these read actions.
       actions = [
         "ec2:DescribeVpcs",
-        "ec2:DescribeAddresses",
         "ec2:DescribeVpcAttribute",
-        "ec2:DescribeAddressesAttribute",
-        "ec2:DescribeSecurityGroups",
-        "ec2:DescribeInternetGateways",
         "ec2:DescribeSubnets",
         "ec2:DescribeRouteTables",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeAddressesAttribute",
+        "ec2:DescribeVpcEndpoints",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
       ]
 
       resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadKmsAliases"
+      effect = "Allow"
+
+      # kms:ListAliases cannot be restricted to a specific key/alias (the
+      # aliases endpoint is account-wide), so AWS requires "*" here.
+      actions   = ["kms:ListAliases"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadEks"
+      effect = "Allow"
+
+      # Read/refresh support for the EKS node groups and add-ons this stack
+      # manages. DescribeCluster/ListClusters are covered by EksDescribe.
+      actions = [
+        "eks:DescribeNodegroup",
+        "eks:ListNodegroups",
+        "eks:DescribeAddon",
+        "eks:ListAddons",
+        "eks:DescribeAddonVersions",
+        "eks:ListTagsForResource",
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${local.role_prefix}",
+        "arn:${data.aws_partition.current.partition}:eks:${var.region}:${data.aws_caller_identity.current.account_id}:nodegroup/${local.role_prefix}/*",
+        "arn:${data.aws_partition.current.partition}:eks:${var.region}:${data.aws_caller_identity.current.account_id}:addon/${local.role_prefix}/*",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.terraform_state_bucket != "" && var.terraform_state_key != "" ? [1] : []
+    content {
+      sid    = "TfPlanReadAutoscaling"
+      effect = "Allow"
+
+      # The EKS node group resource refreshes its backing Auto Scaling group.
+      actions   = ["autoscaling:DescribeAutoScalingGroups"]
+      resources = ["arn:${data.aws_partition.current.partition}:autoscaling:${var.region}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*"]
     }
   }
 }
