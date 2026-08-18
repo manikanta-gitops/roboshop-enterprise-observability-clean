@@ -216,10 +216,13 @@ data "aws_iam_policy_document" "ci" {
         "iam:GetRole",
         "iam:GetOpenIDConnectProvider",
         "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:GetRolePolicy",
       ]
 
       resources = [
         "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_prefix}-*",
+        "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.role_prefix}-*/*",
         "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
         "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/oidc.eks.${var.region}.amazonaws.com/id/*",
       ]
@@ -260,6 +263,7 @@ data "aws_iam_policy_document" "ci" {
       actions = [
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
       ]
 
       resources = [
@@ -281,6 +285,10 @@ data "aws_iam_policy_document" "ci" {
         "ec2:DescribeAddresses",
         "ec2:DescribeVpcAttribute",
         "ec2:DescribeAddressesAttribute",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeRouteTables",
       ]
 
       resources = ["*"]
