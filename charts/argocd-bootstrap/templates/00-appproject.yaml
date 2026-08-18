@@ -1,3 +1,4 @@
+{{- /* The Roboshop AppProject. Mirrors gitops/projects/roboshop-project.yaml. */}}
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -8,7 +9,7 @@ metadata:
 spec:
   description: Roboshop microservices platform (all environments)
   sourceRepos:
-    - https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
+    - {{ .Values.repoUrl }}
   destinations:
     - namespace: 'roboshop-*'
       server: https://kubernetes.default.svc

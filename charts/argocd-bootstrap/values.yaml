@@ -1,0 +1,7 @@
+# GitOps source repository - the single source of truth Argo CD reads.
+# Terraform passes this in from var.github_org / var.github_repo, so it stays
+# consistent with the OIDC role and the CI write-back target.
+repoUrl: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
+
+# Branch the Argo CD Applications track.
+targetRevision: main

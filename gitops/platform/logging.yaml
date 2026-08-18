@@ -21,7 +21,7 @@ spec:
         releaseName: opensearch
         valueFiles:
           - $values/logging/opensearch/values.yaml
-    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
       targetRevision: main
       ref: values
   destination:
@@ -56,7 +56,7 @@ spec:
         releaseName: opensearch-dashboards
         valueFiles:
           - $values/logging/opensearch-dashboards/values.yaml
-    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
       targetRevision: main
       ref: values
   destination:
@@ -91,7 +91,7 @@ spec:
         releaseName: fluent-bit
         valueFiles:
           - $values/logging/fluent-bit/values.yaml
-    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
       targetRevision: main
       ref: values
   destination:

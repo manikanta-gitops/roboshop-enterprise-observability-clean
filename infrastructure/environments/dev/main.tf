@@ -112,6 +112,32 @@ module "addons" {
   tags              = local.tags
 }
 
+# --------------------------------------------------------------------------- #
+# Argo CD bootstrap: the roboshop AppProject + app-of-apps root Application.
+#
+# Argo CD is installed by module.addons above. This release applies the
+# bootstrap resources from charts/argocd-bootstrap so no manual kubectl apply
+# is needed. The root Application then manages the ApplicationSet from Git,
+# which generates the 11 dev Applications. Idempotent: re-running apply is a
+# no-op once the AppProject and root Application exist.
+# --------------------------------------------------------------------------- #
+resource "helm_release" "argocd_bootstrap" {
+  name      = "roboshop-gitops-bootstrap"
+  chart     = "${path.module}/../../../charts/argocd-bootstrap"
+  namespace = "argocd"
+  atomic    = true
+  timeout   = 300
+
+  depends_on = [module.addons]
+
+  values = [yamlencode({
+    # Derived from the same github_org / github_repo vars the OIDC role uses,
+    # keeping the GitOps source consistent with the CI write-back target.
+    repoUrl        = "https://github.com/${var.github_org}/${var.github_repo}.git"
+    targetRevision = "main"
+  })]
+}
+
 resource "aws_budgets_budget" "monthly" {
   count = var.monthly_budget_usd > 0 && var.budget_email != "" ? 1 : 0
 

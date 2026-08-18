@@ -70,7 +70,7 @@ spec:
     spec:
       project: roboshop
       sources:
-        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
           targetRevision: main
           path: '{{.chart}}'
           helm:
@@ -79,7 +79,7 @@ spec:
               - values.yaml
               - values-dev.yaml
               - $values/environments/dev/global-values.yaml
-        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+        - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
           targetRevision: main
           ref: values
       destination:

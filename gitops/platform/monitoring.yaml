@@ -22,11 +22,11 @@ spec:
         releaseName: monitoring
         valueFiles:
           - $values/monitoring/kube-prometheus-stack/values.yaml
-    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
       targetRevision: main
       ref: values
     # Alert rules and dashboards shipped as plain manifests.
-    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise.git
+    - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
       targetRevision: main
       path: monitoring/rules
   destination:

@@ -1,12 +1,6 @@
-# ---------------------------------------------------------------------------
-# App-of-apps root for the dev environment.
-#
-# Applied automatically by Terraform (helm release roboshop-gitops-bootstrap,
-# chart charts/argocd-bootstrap) - no manual kubectl apply is needed.
-# Kept in git as the reviewable/canonical copy for the other environments.
-#
-# Everything else (ApplicationSet -> 11 Applications) is pulled from Git.
-# ---------------------------------------------------------------------------
+{{- /* App-of-apps root for the dev environment. Mirrors gitops/applications/root-dev.yaml. */}}
+{{- /* Applied once per cluster by Terraform (helm release argocd-bootstrap). */}}
+{{- /* Everything else (ApplicationSet -> 11 Applications) is pulled from Git. */}}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -19,8 +13,8 @@ metadata:
 spec:
   project: roboshop
   source:
-    repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
-    targetRevision: main
+    repoURL: {{ .Values.repoUrl }}
+    targetRevision: {{ .Values.targetRevision }}
     path: gitops/applicationsets
     directory:
       recurse: false
