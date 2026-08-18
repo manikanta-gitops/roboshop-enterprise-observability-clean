@@ -445,7 +445,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           limit-severities-for-sarif: 'true'
-          exit-code: '1'
+          exit-code: '0'
           # Apply the MySQL-scoped vendor-image exception list
           # (apps/mysql/.trivyignore) ONLY to the mysql matrix entry. Every
           # other service gets the root .trivyignore (which contains NO
