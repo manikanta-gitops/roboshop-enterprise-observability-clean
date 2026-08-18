@@ -1,11 +1,11 @@
 # payment - dev overrides. Only values that differ from values.yaml.
 environment: dev
 namespace: roboshop-dev
-
 replicaCount: 1
 image:
-  tag: "2.0.1"
-
+  tag: "9d2d3dd2a01d72164e2839635eabf72f006d7e00"
+  repository: roboshop/payment
+  digest: sha256:d3ae2133166c4a2a8f00edfca47848693a0cd00c2e873330ed94af7aba9e70d1
 resources:
   requests:
     cpu: 50m
@@ -13,19 +13,15 @@ resources:
   limits:
     cpu: "250m"
     memory: 256Mi
-
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-
 topologySpreadConstraints:
   enabled: false
   maxSkew: 1
   topologyKey: topology.kubernetes.io/zone
   whenUnsatisfiable: ScheduleAnyway
-
 nodeSelector: {}
-
 commonAnnotations:
   argocd.argoproj.io/sync-wave: "1"
   roboshop.io/environment: "dev"
