@@ -85,7 +85,7 @@ jobs:
     name: plan ${{ matrix.environment }}
     needs: static
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, linux, x64, roboshop-tf]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
       group: terraform-plan-${{ matrix.environment }}
@@ -155,7 +155,7 @@ jobs:
     name: apply ${{ inputs.environment }}
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
     needs: [static, plan]
-    runs-on: [self-hosted, linux, x64, roboshop-tf]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
       group: terraform-apply-${{ inputs.environment }}
