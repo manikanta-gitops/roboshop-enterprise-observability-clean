@@ -446,10 +446,12 @@ jobs:
           ignore-unfixed: true
           limit-severities-for-sarif: 'true'
           exit-code: '1'
-          # Explicitly apply the repo-scoped vendor-image exception list
-          # (.trivyignore). Kept per-service; the gate stays blocking for any
-          # CRITICAL/HIGH finding not listed there.
-          trivyignores: .trivyignore
+          # Apply the MySQL-scoped vendor-image exception list
+          # (apps/mysql/.trivyignore) ONLY to the mysql matrix entry. Every
+          # other service gets the root .trivyignore (which contains NO
+          # suppressions), so the gate stays blocking for any CRITICAL/HIGH
+          # finding not listed there.
+          trivyignores: ${{ matrix.service == 'mysql' && 'apps/mysql/.trivyignore' || '.trivyignore' }}
 
 
       # -----------------------------------------------------------------------

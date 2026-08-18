@@ -1,0 +1,8 @@
+# Repository root Trivy ignore file (intentionally EMPTY of suppressions).
+#
+# This file exists so every non-MySQL matrix service has a valid .trivyignore
+# for the Trivy scan step. It contains NO vulnerability suppressions:
+# - MySQL's vendor-image exceptions live in apps/mysql/.trivyignore and are
+#   passed ONLY to the mysql matrix entry.
+# - All other services scan with this file, so CRITICAL/HIGH findings remain
+#   fully blocking and no MySQL-specific CVE can be inherited by other images.

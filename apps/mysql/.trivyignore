@@ -1,0 +1,90 @@
+# Scoped vendor-image suppressions for the official mysql:8.4.11 image.
+#
+# These CRITICAL/HIGH findings are NOT actionable from this application and
+# cannot be fixed from this project: they live in the official vendor image
+# (FROM mysql:8.4.11) and have no fix in any newer mysql:8.4.x patch image.
+# Rebuilding the vendor image is out of scope for this portfolio project.
+#
+# 1) gosu 1.19 -- prebuilt Go binary (Go stdlib 1.24.6 + golang.org/x/sys 0.1.0)
+#    The official image ships a PREBUILT gosu compiled upstream with Go 1.24.6.
+#    Trivy's gobinary scanner flags every Go stdlib CVE still open for Go 1.24.6
+#    (fixed only in Go 1.24.13 .. 1.25.13 / 1.26.6) plus the pinned
+#    golang.org/x/sys advisory GO-2026-5024 / CVE-2026-39824 (fixed in x/sys
+#    0.44.0). gosu is required by docker-entrypoint.sh for privilege drop and
+#    cannot be patched without MySQL upstream rebuilding it on a newer Go
+#    toolchain.
+#
+# 2) MySQL Shell bundled Python packages (urllib3, cryptography, pyOpenSSL)
+#    Installed by the vendor into MySQL Shell's Python environment. They are
+#    NOT this application's dependencies; upgrading them in-place risks
+#    breaking mysqlsh and no fixed versions are shipped via the MySQL yum repo.
+#
+# Policy: the Trivy gate stays enabled (severity CRITICAL,HIGH,
+# ignore-unfixed true, exit-code 1) for everything NOT listed here.
+# Each stdlib advisory is listed in BOTH the CVE and the Go-vulndb (GO-202x-xxxx)
+# forms because Trivy may emit either ID for the same gobinary finding.
+
+# --- gosu: Go stdlib CRITICAL ---
+CVE-2025-68121
+GO-2026-4337
+
+# --- gosu: Go stdlib HIGH ---
+CVE-2025-58187
+GO-2025-4007
+CVE-2025-58188
+GO-2025-4013
+CVE-2025-61723
+GO-2025-4009
+CVE-2025-61725
+GO-2025-4006
+CVE-2025-61726
+GO-2026-4341
+CVE-2025-61729
+GO-2025-4155
+CVE-2026-25679
+GO-2026-4601
+CVE-2026-32280
+GO-2026-4947
+CVE-2026-32281
+GO-2026-4946
+CVE-2026-32283
+GO-2026-4870
+CVE-2026-33811
+GO-2026-4981
+CVE-2026-33814
+GO-2026-4918
+CVE-2026-39820
+GO-2026-4986
+CVE-2026-39836
+GO-2026-4971
+CVE-2026-42499
+GO-2026-4977
+CVE-2026-42504
+GO-2026-5038
+# Go 1.24.13/1.25.13/1.26.6 security release batch (latest Go vulndb update)
+CVE-2026-33818
+GO-2026-5972
+CVE-2026-39822
+GO-2026-4970
+CVE-2026-56853
+GO-2026-6089
+CVE-2026-56858
+GO-2026-6091
+CVE-2026-56859
+GO-2026-6088
+CVE-2026-56860
+GO-2026-6218
+CVE-2026-56862
+GO-2026-6090
+
+# --- gosu: golang.org/x/sys HIGH ---
+GO-2026-5024
+CVE-2026-39824
+
+# --- MySQL Shell Python packages HIGH ---
+CVE-2026-44431
+CVE-2026-44432
+CVE-2026-69247
+CVE-2026-69249
+GHSA-537c-gmf6-5ccf
+CVE-2026-27459
