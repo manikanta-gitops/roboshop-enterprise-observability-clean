@@ -790,6 +790,28 @@ jobs:
 
 
       # -----------------------------------------------------------------------
+      # Create GitOps automation branch
+      #
+      # The automation branch is created/checked out BEFORE GitOps values are
+      # modified. This ensures the modifications land on the branch, not on
+      # main, so the later commit/push/PR step never has to switch branches
+      # with pending local changes (which would fail with "local changes would
+      # be overwritten by checkout").
+      # -----------------------------------------------------------------------
+      - name: Create GitOps automation branch
+        env:
+          BRANCH: automation/dev-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main
+          git checkout -B "$BRANCH" origin/main
+
+          echo "GitOps branch ready: $BRANCH"
+          git branch --show-current
+
+
+      # -----------------------------------------------------------------------
       # Update GitOps image references
       #
       # Only selected/changed services are modified.

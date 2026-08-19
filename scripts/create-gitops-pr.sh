@@ -36,21 +36,21 @@ git config user.name "roboshop-ci[bot]"
 git config user.email "ci@roboshop.internal"
 
 # ---------------------------------------------------------------------------
-# Fetch remote automation branch if it already exists.
+# Verify we are on the expected GitOps branch.
 #
-# This makes retries safe and prevents us from starting from stale state.
+# The workflow creates/checks out the automation branch BEFORE modifying the
+# GitOps files. We must NOT switch branches here: switching now would either
+# fail ("local changes would be overwritten by checkout") or discard the
+# pending GitOps modifications. We only verify the current branch.
 # ---------------------------------------------------------------------------
-git fetch origin "$BRANCH" 2>/dev/null || true
+CURRENT_BRANCH="$(git branch --show-current)"
 
-# ---------------------------------------------------------------------------
-# Reuse existing automation branch when available.
-# Otherwise create it from the current checkout.
-# ---------------------------------------------------------------------------
-if git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null 2>&1; then
-  git checkout -B "$BRANCH" "origin/$BRANCH"
-else
-  git checkout -B "$BRANCH"
+if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+  echo "::error::Expected to be on branch '$BRANCH' but found '$CURRENT_BRANCH'" >&2
+  exit 1
 fi
+
+echo "On GitOps branch: $BRANCH"
 
 # ---------------------------------------------------------------------------
 # Stage only GitOps files.
