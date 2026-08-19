@@ -11,6 +11,18 @@ locals {
     ManagedBy   = "terraform"
     Owner       = "platform-engineering"
   }
+
+  # Content hash of the local argocd-bootstrap chart. The HashiCorp helm
+  # provider does not watch local chart files, so chart edits would otherwise
+  # never show up in the plan. Passing this hash into the release values below
+  # makes terraform detect chart-content changes and run an in-place
+  # `helm upgrade`. The chart templates never read the chartHash key.
+  argocd_bootstrap_chart_dir = "${path.module}/../../../charts/argocd-bootstrap"
+
+  argocd_bootstrap_chart_hash = sha256(join("", [
+    for f in sort(fileset(local.argocd_bootstrap_chart_dir, "**")) :
+    filebase64sha256("${local.argocd_bootstrap_chart_dir}/${f}")
+  ]))
 }
 
 module "vpc" {
@@ -140,6 +152,9 @@ resource "helm_release" "argocd_bootstrap" {
     # keeping the GitOps source consistent with the CI write-back target.
     repoUrl        = "https://github.com/${var.github_org}/${var.github_repo}.git"
     targetRevision = "main"
+
+    # Deterministic trigger for local chart changes (see local above).
+    chartHash = local.argocd_bootstrap_chart_hash
   })]
 }
 
