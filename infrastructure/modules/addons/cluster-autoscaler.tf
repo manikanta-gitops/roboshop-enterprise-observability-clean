@@ -9,6 +9,21 @@
 ###############################################################################
 
 data "aws_iam_policy_document" "cluster_autoscaler" {
+  # EC2 instance-type discovery is not resource-scoped (no instance to target),
+  # so AWS requires "*" for these read actions.
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "ec2:DescribeInstanceTypes",
+      "ec2:DescribeLaunchTemplateVersions",
+      "ec2:DescribeImages",
+      "ec2:GetInstanceTypesFromInstanceRequirements",
+    ]
+
+    resources = ["*"]
+  }
+
   statement {
     effect = "Allow"
 
@@ -18,10 +33,6 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
       "autoscaling:DescribeLaunchConfigurations",
       "autoscaling:DescribeScalingActivities",
       "autoscaling:DescribeTags",
-      "ec2:DescribeInstanceTypes",
-      "ec2:DescribeLaunchTemplateVersions",
-      "ec2:DescribeImages",
-      "ec2:GetInstanceTypesFromInstanceRequirements",
       "eks:DescribeNodegroup",
     ]
 
