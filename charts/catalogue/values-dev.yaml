@@ -1,11 +1,11 @@
 # catalogue - dev overrides. Only values that differ from values.yaml.
 environment: dev
 namespace: roboshop-dev
-
 replicaCount: 1
 image:
-  tag: "2.0.1"
-
+  tag: "53ebc1e2fab5817c89398b81e872d3fb7b255a33"
+  repository: roboshop/catalogue
+  digest: sha256:ad62791b8b0a0b4a83276654b0ab807a6c12b45aa704c9da7ace945ae54fb0a2
 resources:
   requests:
     cpu: 50m
@@ -13,25 +13,20 @@ resources:
   limits:
     cpu: "250m"
     memory: 256Mi
-
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 3
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-
 topologySpreadConstraints:
   enabled: true
   maxSkew: 1
   topologyKey: topology.kubernetes.io/zone
   whenUnsatisfiable: ScheduleAnyway
-
 nodeSelector: {}
-
 commonAnnotations:
   argocd.argoproj.io/sync-wave: "1"
   roboshop.io/environment: "dev"

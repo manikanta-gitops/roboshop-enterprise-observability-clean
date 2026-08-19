@@ -1,11 +1,11 @@
 # frontend - dev overrides. Only values that differ from values.yaml.
 environment: dev
 namespace: roboshop-dev
-
 replicaCount: 1
 image:
-  tag: "2.0.3"
-
+  tag: "53ebc1e2fab5817c89398b81e872d3fb7b255a33"
+  repository: roboshop/frontend
+  digest: sha256:dfc3ff7a0f46837ed100ed8e8213ded70c42f7546fadc8487d7ed7bad544da59
 resources:
   requests:
     cpu: 50m
@@ -13,25 +13,20 @@ resources:
   limits:
     cpu: "250m"
     memory: 256Mi
-
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 3
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-
 topologySpreadConstraints:
   enabled: true
   maxSkew: 1
   topologyKey: topology.kubernetes.io/zone
   whenUnsatisfiable: ScheduleAnyway
-
 nodeSelector: {}
-
 commonAnnotations:
   argocd.argoproj.io/sync-wave: "2"
   roboshop.io/environment: "dev"
