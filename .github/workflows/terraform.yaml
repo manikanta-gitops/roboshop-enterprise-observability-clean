@@ -106,6 +106,12 @@ jobs:
           role-to-assume: ${{ matrix.environment == 'production' && secrets.AWS_OIDC_ROLE_ARN_PRODUCTION || secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Test EKS connectivity
+        run: |
+          ENDPOINT=$(aws eks describe-cluster --name roboshop-dev --region ap-south-1 --query 'cluster.endpoint' --output text)
+          echo "EKS endpoint: $ENDPOINT"
+          curl -vk --connect-timeout 10 "$ENDPOINT/version"
+
       - name: terraform plan
         id: plan
         working-directory: infrastructure/environments/${{ matrix.environment }}
