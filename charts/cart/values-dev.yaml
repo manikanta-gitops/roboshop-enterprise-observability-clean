@@ -3,7 +3,7 @@ environment: dev
 namespace: roboshop-dev
 replicaCount: 1
 image:
-  tag: "6db6441f6005ba50dcf1da6b8f1190acb00fc98b"
+  tag: "53ebc1e2fab5817c89398b81e872d3fb7b255a33"
   repository: roboshop/cart
   digest: sha256:967818e96cdfb218124e30036b49dcef3c429564f0b679046f3794bf7ae7dfba
 resources:
