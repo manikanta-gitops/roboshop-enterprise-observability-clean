@@ -1,16 +1,14 @@
 # mongodb - dev overrides. Only values that differ from values.yaml.
 environment: dev
 namespace: roboshop-dev
-
 image:
-  tag: "2.0.0"
-
+  tag: "3d955d055f6ed22fdce023149809560e3c2acd78"
+  repository: roboshop/mongodb
+  digest: sha256:51ead429ed8b2e331b82063bfb282c4a121a8ce317d5798dd2122c5d4615d321
 persistence:
   storageClass: gp3
   size: 5Gi
-
 nodeSelector: {}
-
 commonAnnotations:
   argocd.argoproj.io/sync-wave: "0"
   roboshop.io/environment: "dev"
