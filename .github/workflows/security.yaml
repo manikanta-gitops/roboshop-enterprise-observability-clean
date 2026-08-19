@@ -115,7 +115,7 @@ jobs:
         run: |
           python -m pip install -q pytest
           PYTHONPATH=apps/payment pytest -q apps/payment/tests
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
