@@ -132,7 +132,7 @@ jobs:
             done < image-digests.txt
           } > releases/${{ steps.v.outputs.version }}.yaml
 
-      - uses: mikefarah/yq@v4.44.3
+      - uses: mikefarah/yq@v4.53.3
 
       - name: Update dev to the release artifact
         env:
