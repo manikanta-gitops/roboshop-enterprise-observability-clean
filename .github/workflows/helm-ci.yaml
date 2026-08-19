@@ -63,7 +63,7 @@ jobs:
         run: bash ci/validate.sh
 
       - name: Checkov (Helm + rendered manifests)
-        uses: bridgecrewio/checkov-action@v12.2991.0
+        uses: bridgecrewio/checkov-action@v12.3115.0
         with:
           directory: charts
           framework: helm

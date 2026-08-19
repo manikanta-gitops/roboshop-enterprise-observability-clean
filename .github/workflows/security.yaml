@@ -87,7 +87,7 @@ jobs:
             terraform -chdir="$d" validate
           done
       - name: Checkov
-        uses: bridgecrewio/checkov-action@v12.2991.0
+        uses: bridgecrewio/checkov-action@v12.3115.0
         with:
           directory: infrastructure
           framework: terraform
