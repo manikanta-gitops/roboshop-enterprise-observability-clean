@@ -9,12 +9,18 @@
 ###############################################################################
 
 data "aws_iam_policy_document" "cluster_autoscaler" {
-  # EC2 instance-type discovery is not resource-scoped (no instance to target),
-  # so AWS requires "*" for these read actions.
+  # These read/discovery actions are not resource-scoped (the autoscaling
+  # Describe* APIs and EC2 instance-type discovery cannot be restricted to a
+  # resource ARN), so AWS requires "*" here.
   statement {
     effect = "Allow"
 
     actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:DescribeAutoScalingInstances",
+      "autoscaling:DescribeLaunchConfigurations",
+      "autoscaling:DescribeScalingActivities",
+      "autoscaling:DescribeTags",
       "ec2:DescribeInstanceTypes",
       "ec2:DescribeLaunchTemplateVersions",
       "ec2:DescribeImages",
@@ -28,16 +34,10 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
     effect = "Allow"
 
     actions = [
-      "autoscaling:DescribeAutoScalingGroups",
-      "autoscaling:DescribeAutoScalingInstances",
-      "autoscaling:DescribeLaunchConfigurations",
-      "autoscaling:DescribeScalingActivities",
-      "autoscaling:DescribeTags",
       "eks:DescribeNodegroup",
     ]
 
     resources = [
-      "arn:aws:autoscaling:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*",
       "arn:aws:eks:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:nodegroup/${var.cluster_name}/*",
     ]
   }
