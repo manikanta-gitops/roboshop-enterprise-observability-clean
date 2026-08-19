@@ -21,7 +21,7 @@ on:
         required: true
         default: dev
         type: choice
-        options: [dev, production]
+        options: [dev]
       action:
         description: plan or apply
         required: true
@@ -57,7 +57,7 @@ jobs:
       - name: terraform validate (all stacks)
         run: |
           set -euo pipefail
-          for d in infrastructure/bootstrap infrastructure/environments/*; do
+          for d in infrastructure/bootstrap infrastructure/environments/dev; do
             echo "::group::validate $d"
             terraform -chdir="$d" init -backend=false -input=false
             terraform -chdir="$d" validate
@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev, production]
+        environment: [dev]
     steps:
       - uses: actions/checkout@v4
 
@@ -103,7 +103,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ matrix.environment == 'production' && secrets.AWS_OIDC_ROLE_ARN_PRODUCTION || secrets.AWS_OIDC_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Test EKS connectivity
@@ -167,7 +167,7 @@ jobs:
     concurrency:
       group: terraform-apply-${{ inputs.environment }}
       cancel-in-progress: false
-    environment: ${{ inputs.environment }}   # protection rules gate production
+    environment: dev
     steps:
       - uses: actions/checkout@v4
 
@@ -177,7 +177,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.environment == 'production' && secrets.AWS_OIDC_ROLE_ARN_PRODUCTION || secrets.AWS_OIDC_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Download plan artifact
