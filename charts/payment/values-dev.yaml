@@ -3,7 +3,7 @@ environment: dev
 namespace: roboshop-dev
 replicaCount: 1
 image:
-  tag: "09d8f55f70d0f5f789aeac3eb5d38c7b9ec5eed1"
+  tag: "3d955d055f6ed22fdce023149809560e3c2acd78"
   repository: roboshop/payment
   digest: sha256:d3ae2133166c4a2a8f00edfca47848693a0cd00c2e873330ed94af7aba9e70d1
 resources:
