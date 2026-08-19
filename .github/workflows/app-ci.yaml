@@ -124,12 +124,82 @@ jobs:
 
 
   # ===========================================================================
+  # 1b. Prepare the shared OWASP Dependency-Check NVD database
+  #
+  # Runs ONCE per workflow run, before the service matrix. It restores the
+  # cached NVD database (daily key), refreshes it with --updateonly, then
+  # saves it back under a per-day key. Every service scan then restores a
+  # read-only copy and runs with the action's built-in --noupdate, so the
+  # vulnerability feed is downloaded exactly once instead of once per service.
+  #
+  # No NVD API key is configured: this repository defines no such secret
+  # (verified across .github/workflows). The NVD 2.0 API works without a key.
+  # ===========================================================================
+  dependency-check-db:
+    name: prepare shared OWASP NVD database
+    needs:
+      - detect
+
+    if: needs.detect.outputs.any == 'true'
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    outputs:
+      cache-date: ${{ steps.date.outputs.date }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute NVD cache date
+        id: date
+        run: |
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore NVD database cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.dependency-check
+          key: depcheck-nvd-${{ runner.os }}-${{ steps.date.outputs.date }}
+          restore-keys: |
+            depcheck-nvd-${{ runner.os }}-
+
+      - name: Ensure NVD data directory
+        run: mkdir -p "${{ github.workspace }}/.dependency-check"
+
+      - name: Update OWASP NVD database (once per day)
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: docker://owasp/dependency-check-action:latest
+        with:
+          entrypoint: /usr/share/dependency-check/bin/dependency-check.sh
+          args: --updateonly --data /github/workspace/.dependency-check
+
+      # Cache bookkeeping only - this is NOT the security gate. continue-on-error
+      # tolerates a benign "cache entry already exists" race when two workflow
+      # runs land on the same daily key. The OWASP scan step below has no
+      # soft-fail and still gates the build.
+      - name: Save NVD database cache
+        if: steps.restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.dependency-check
+          key: depcheck-nvd-${{ runner.os }}-${{ steps.date.outputs.date }}
+
+
+  # ===========================================================================
   # 2. Test, scan and build
   # ===========================================================================
   build:
     name: build ${{ matrix.service }}
 
-    needs: detect
+    needs:
+      - detect
+      - dependency-check-db
 
     if: needs.detect.outputs.any == 'true'
 
@@ -359,22 +429,33 @@ jobs:
 
 
       # -----------------------------------------------------------------------
-      # OWASP Dependency-Check cache
+      # OWASP Dependency-Check - restore shared NVD database
+      #
+      # The NVD database is prepared ONCE per run by the dependency-check-db
+      # job and cached per day, so matrix services do not each download the
+      # vulnerability feed. Restore is read-only and the scan runs with the
+      # action's built-in --noupdate, so concurrent matrix jobs only READ
+      # their own local copy and can never corrupt the shared cache.
       # -----------------------------------------------------------------------
-      - name: Cache OWASP Dependency-Check NVD
-        uses: actions/cache@v4
+      - name: Restore shared NVD database
+        uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/dependency-check
-          key: owasp-dc-${{ runner.os }}-${{ hashFiles(format('{0}/**/*', env.SERVICE_DIR)) }}
+          path: ${{ github.workspace }}/.dependency-check
+          key: depcheck-nvd-${{ runner.os }}-${{ needs.dependency-check-db.outputs.cache-date }}
           restore-keys: |
-            owasp-dc-${{ runner.os }}-
-
+            depcheck-nvd-${{ runner.os }}-
 
       # -----------------------------------------------------------------------
       # OWASP Dependency-Check
+      #
+      # Pinned to release 1.1.0 (commit 75ba02d) instead of floating @main.
+      #   --data: point at the shared, cached database under /github/workspace
+      #   --disableCentral: stop the Java "Central Analyzer" from silently
+      #       querying Maven Central after the Jar analyzer (the root cause of
+      #       the shipping hang); NVD scanning and the CVSS gate stay enabled.
       # -----------------------------------------------------------------------
       - name: OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@main
+        uses: dependency-check/Dependency-Check_Action@75ba02d6183445fe0761d26e836bde58b1560600
         env:
           JAVA_HOME: /opt/jdk
         with:
@@ -382,8 +463,10 @@ jobs:
           path: ${{ env.SERVICE_DIR }}
           format: 'ALL'
           args: >
+            --data /github/workspace/.dependency-check
             --failOnCVSS 8
             --enableRetired
+            --disableCentral
             --suppression security/dependency-check-suppression.xml
 
 
