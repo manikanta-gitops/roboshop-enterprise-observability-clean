@@ -12,7 +12,7 @@ workloadKind: StatefulSet
 
 image:
   registry: ""
-  repository: devopman/mysql
+  repository: roboshop/mysql
   tag: "2.0.0"
   digest: ""
   pullPolicy: IfNotPresent

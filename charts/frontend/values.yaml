@@ -12,7 +12,7 @@ workloadKind: Deployment
 
 image:
   registry: ""
-  repository: devopman/frontend
+  repository: roboshop/frontend
   tag: "2.0.3"
   digest: ""
   pullPolicy: Always

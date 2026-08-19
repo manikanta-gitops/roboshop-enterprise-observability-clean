@@ -12,7 +12,7 @@ workloadKind: Deployment
 
 image:
   registry: ""
-  repository: devopman/user
+  repository: roboshop/user
   tag: "2.0.1"
   digest: ""
   pullPolicy: IfNotPresent

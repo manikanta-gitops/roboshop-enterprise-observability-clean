@@ -12,7 +12,7 @@ workloadKind: Deployment
 
 image:
   registry: ""
-  repository: devopman/cart
+  repository: roboshop/cart
   tag: "2.0.1"
   digest: ""
   pullPolicy: IfNotPresent
