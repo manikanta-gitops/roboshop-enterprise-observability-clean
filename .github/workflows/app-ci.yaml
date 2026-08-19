@@ -2,14 +2,17 @@
 # Application CI/CD
 #
 # checkout -> deps -> unit test -> build -> SonarQube -> OWASP Dependency-Check
-#   -> docker build -> Trivy -> SBOM -> scanned artifact -> dev ECR -> GitOps PR
+#   -> docker build -> Trivy -> SBOM -> scanned artifact -> dev ECR
+#   -> CI Gate -> GitOps PR -> ArgoCD -> EKS
 #
-# Only the services whose files changed are built. Images are tagged with the
-# commit SHA (immutable).
+# Only services whose files changed are built.
+# Images are tagged with the commit SHA (immutable).
 #
 # Manual workflow_dispatch can force-build one service.
-# Manual dispatch publishes to ECR but does NOT perform GitOps write-back.
-# GitOps write-back happens only for normal pushes to main.
+# Manual dispatch also performs GitOps write-back after CI passes.
+#
+# GitOps NEVER deploys directly to Kubernetes.
+# ArgoCD remains responsible for deployment.
 # =============================================================================
 
 name: app-ci
@@ -53,9 +56,9 @@ env:
 
 jobs:
 
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   # 1. Detect changed services
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   detect:
     name: detect changed services
     runs-on: ubuntu-latest
@@ -67,11 +70,13 @@ jobs:
 
     steps:
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v3
+      - name: Detect changed services
+        uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
@@ -84,9 +89,8 @@ jobs:
             mongodb:   ['apps/mongodb/**']
             mysql:     ['apps/mysql/**']
 
-      # Values from workflow_dispatch/action outputs are passed through env
-      # instead of directly interpolating them into shell commands.
-      - id: set
+      - name: Select services
+        id: set
         env:
           DISPATCH_SERVICE: ${{ inputs.service }}
           DETECTED_SERVICES: ${{ steps.filter.outputs.changes }}
@@ -95,8 +99,10 @@ jobs:
 
           if [ "$DISPATCH_SERVICE" = "all" ]; then
             SERVICES='["cart","catalogue","user","payment","shipping","frontend","mongodb","mysql"]'
+
           elif [ -n "$DISPATCH_SERVICE" ] && [ "$DISPATCH_SERVICE" != "auto" ]; then
             SERVICES=$(printf '["%s"]' "$DISPATCH_SERVICE")
+
           else
             SERVICES="$DETECTED_SERVICES"
           fi
@@ -109,15 +115,17 @@ jobs:
             echo "any=true" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Building: $SERVICES"
+          echo "Building services: $SERVICES"
 
-      - id: env
-        run: echo "environment=dev" >> "$GITHUB_OUTPUT"
+      - name: Set environment
+        id: env
+        run: |
+          echo "environment=dev" >> "$GITHUB_OUTPUT"
 
 
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   # 2. Test, scan and build
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   build:
     name: build ${{ matrix.service }}
 
@@ -143,7 +151,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Checkout
       # -----------------------------------------------------------------------
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -175,7 +184,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Node.js
       # -----------------------------------------------------------------------
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         if: steps.lang.outputs.lang == 'node'
         with:
           node-version: '22'
@@ -184,12 +194,10 @@ jobs:
 
 
       # -----------------------------------------------------------------------
-      # Java application runtime
-      #
-      # Keep Java 17 for the actual application build/test.
-      # SonarScanner has its own Java 21 runtime through Scanner CLI v8.
+      # Java
       # -----------------------------------------------------------------------
-      - uses: actions/setup-java@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         if: steps.lang.outputs.lang == 'java'
         with:
           distribution: temurin
@@ -200,7 +208,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Python
       # -----------------------------------------------------------------------
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         if: steps.lang.outputs.lang == 'python'
         with:
           python-version: '3.11'
@@ -321,9 +330,6 @@ jobs:
 
       # -----------------------------------------------------------------------
       # SonarQube scan
-      #
-      # Scanner CLI v8 uses Java 21.
-      # Therefore we DO NOT change the application's Java 17 runtime above.
       # -----------------------------------------------------------------------
       - name: SonarQube scan
         if: ${{ env.SONAR_HOST_URL != '' }}
@@ -342,8 +348,6 @@ jobs:
 
       # -----------------------------------------------------------------------
       # SonarQube quality gate
-      #
-      # Quality gate is enforced on pull requests.
       # -----------------------------------------------------------------------
       - name: SonarQube quality gate
         if: ${{ env.SONAR_HOST_URL != '' && github.event_name == 'pull_request' }}
@@ -361,18 +365,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/dependency-check
-          key: owasp-dc-${{ runner.os }}-${{ github.run_id }}
+          key: owasp-dc-${{ runner.os }}-${{ hashFiles(format('{0}/**/*', env.SERVICE_DIR)) }}
           restore-keys: |
             owasp-dc-${{ runner.os }}-
 
 
       # -----------------------------------------------------------------------
       # OWASP Dependency-Check
-      #
-      # @v6 does not exist.
-      #
-      # JAVA_HOME must be reset to /opt/jdk because setup-java above changes
-      # JAVA_HOME and the Dependency-Check action runs in its own container.
       # -----------------------------------------------------------------------
       - name: OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@main
@@ -404,7 +403,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Docker Buildx
       # -----------------------------------------------------------------------
-      - uses: docker/setup-buildx-action@v3
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
 
       # -----------------------------------------------------------------------
@@ -425,16 +425,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Trivy image vulnerability scan
       #
-      # This remains a BLOCKING security gate.
-      # CRITICAL/HIGH vulnerabilities cause exit code 1.
-      #
-      # trivy-action's SARIF mode ignores the configured `severity` filter by
-      # default (it unsets TRIVY_SEVERITY so GitHub Code Scanning sees every
-      # severity). That made this gate fail on LOW/MEDIUM-only findings even
-      # when the image had zero actionable CRITICAL/HIGH vulnerabilities.
-      # `limit-severities-for-sarif: true` makes the SARIF scan honor the
-      # configured severity policy. The gate stays blocking:
-      # severity CRITICAL,HIGH / ignore-unfixed true / exit-code 1.
+      # Blocking gate:
+      #   CRITICAL/HIGH + fixed vulnerabilities
       # -----------------------------------------------------------------------
       - name: Trivy image scan
         if: ${{ matrix.service != 'mysql' && matrix.service != 'shipping' }}
@@ -446,12 +438,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           limit-severities-for-sarif: 'true'
-          exit-code: '0'
-          # Apply the MySQL-scoped vendor-image exception list
-          # (apps/mysql/.trivyignore) ONLY to the mysql matrix entry. Every
-          # other service gets the root .trivyignore (which contains NO
-          # suppressions), so the gate stays blocking for any CRITICAL/HIGH
-          # finding not listed there.
+          exit-code: '1'
           trivyignores: ${{ matrix.service == 'mysql' && 'apps/mysql/.trivyignore' || '.trivyignore' }}
 
 
@@ -468,10 +455,7 @@ jobs:
 
 
       # -----------------------------------------------------------------------
-      # Upload Trivy/SBOM artifacts
-      #
-      # if-no-files-found prevents a secondary failure if an earlier scan
-      # failed before creating the artifacts.
+      # Upload security artifacts
       # -----------------------------------------------------------------------
       - name: Upload security artifacts
         if: always()
@@ -486,9 +470,7 @@ jobs:
 
 
       # -----------------------------------------------------------------------
-      # Upload Trivy SARIF to GitHub Security
-      #
-      # Only execute if the SARIF file actually exists.
+      # Upload Trivy SARIF
       # -----------------------------------------------------------------------
       - name: Upload Trivy SARIF
         if: ${{ always() && hashFiles(format('trivy-{0}.sarif', matrix.service)) != '' }}
@@ -524,25 +506,23 @@ jobs:
           retention-days: 1
 
 
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   # 3. Publish to Dev ECR
-  #
-  # Runs for:
-  #   - normal push to main
-  #   - manual workflow_dispatch
-  #
-  # Does NOT run for pull requests.
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   publish:
     name: publish ${{ matrix.service }} to dev ECR
 
-    needs: [detect, build]
+    needs:
+      - detect
+      - build
 
     if: >
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.detect.outputs.any == 'true'
 
     runs-on: ubuntu-latest
+
+    timeout-minutes: 20
 
     environment: dev
 
@@ -560,7 +540,8 @@ jobs:
       # -----------------------------------------------------------------------
       # Download exact scanned image
       # -----------------------------------------------------------------------
-      - uses: actions/download-artifact@v4
+      - name: Download scanned image
+        uses: actions/download-artifact@v4
         with:
           name: image-${{ matrix.service }}-${{ github.sha }}
           path: image
@@ -580,7 +561,8 @@ jobs:
       # -----------------------------------------------------------------------
       # AWS OIDC
       # -----------------------------------------------------------------------
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -589,14 +571,15 @@ jobs:
       # -----------------------------------------------------------------------
       # ECR login
       # -----------------------------------------------------------------------
-      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
         id: ecr
 
 
       # -----------------------------------------------------------------------
       # Push immutable image
       # -----------------------------------------------------------------------
-      - name: Push immutable commit image to ECR
+      - name: Push immutable commit image
         id: push
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -611,16 +594,23 @@ jobs:
 
           docker push "$REPO:${{ github.sha }}"
 
-          DIGEST=$(
+          DIGEST="$(
             docker inspect \
               --format='{{index .RepoDigests 0}}' \
               "$REPO:${{ github.sha }}" |
               cut -d@ -f2
-          )
+          )"
+
+          if [ -z "$DIGEST" ]; then
+            echo "::error::Unable to determine pushed image digest"
+            exit 1
+          fi
 
           echo "image=$REPO@$DIGEST" >> "$GITHUB_OUTPUT"
 
-          echo "pushed $REPO:${{ github.sha }}@$DIGEST"
+          echo "Pushed:"
+          echo "  $REPO:${{ github.sha }}"
+          echo "  digest=$DIGEST"
 
 
       # -----------------------------------------------------------------------
@@ -632,14 +622,6 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Sign immutable ECR image
-      #
-      # Idempotent keyless signing. ECR repositories enforce immutable tags,
-      # and `cosign sign` writes each signature as an immutable
-      # sha256-<hex>.sig tag in the same repository. Any re-run that yields
-      # the same image digest (job reruns/retries, or workflow_dispatch on the
-      # same commit) generates a fresh signature and tries to overwrite that
-      # tag, which ECR rejects with TAG_INVALID. Detect the existing signature
-      # first and skip the duplicate write.
       # -----------------------------------------------------------------------
       - name: Sign image with GitHub OIDC
         env:
@@ -647,11 +629,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # IMAGE looks like <registry>/roboshop/<svc>@sha256:<hex>
-          IMAGE_REF="${IMAGE%%@*}"                # <registry>/roboshop/<svc>
-          REPO_NAME="${IMAGE_REF#*/}"             # roboshop/<svc>
-          DIGEST="${IMAGE#*@}"                    # sha256:<hex>
-          DIGEST_HEX="${DIGEST#sha256:}"          # <hex>
+          IMAGE_REF="${IMAGE%%@*}"
+          REPO_NAME="${IMAGE_REF#*/}"
+          DIGEST="${IMAGE#*@}"
+          DIGEST_HEX="${DIGEST#sha256:}"
+
           SIGNATURE_TAG="sha256-${DIGEST_HEX}.sig"
 
           signature_exists() {
@@ -662,48 +644,41 @@ jobs:
               --output text >/dev/null 2>&1
           }
 
-          # Already signed on a previous run -> recognize and stop instead of
-          # failing on the immutable signature tag. The describe-images probe
-          # shares the OIDC credentials/permissions with cosign, so genuine
-          # AWS failures still surface on the sign path below.
           if signature_exists; then
-            echo "::notice::signature ${SIGNATURE_TAG} already exists for ${DIGEST} - skipping duplicate signing"
+            echo "::notice::Signature already exists for ${DIGEST}"
 
-            # Best-effort recognition of the existing signature (non-blocking).
-            if cosign verify \
-              --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/app-ci.yaml(?:@.*)?\$" \
-              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              "$IMAGE" 2>/dev/null; then
-              echo "::notice::existing signature verified for ${DIGEST}"
-            else
-              echo "::warning::existing signature present for ${DIGEST} but could not be re-verified - treating as signed"
-            fi
+            cosign verify \
+              --certificate-identity-regexp \
+                "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/app-ci.yaml(?:@.*)?\$" \
+              --certificate-oidc-issuer \
+                "https://token.actions.githubusercontent.com" \
+              "$IMAGE"
 
             exit 0
           fi
 
-          # No signature yet -> sign normally. If a concurrent run signs the
-          # same digest while this one is in flight, the signature tag now
-          # exists and the digest is signed; otherwise propagate the real
-          # signing failure (credentials, permissions, tlog, ...).
           if ! cosign sign --yes "$IMAGE"; then
             if signature_exists; then
-              echo "::notice::concurrent run signed ${DIGEST} - treating as signed"
+              echo "::notice::Concurrent run created the signature"
               exit 0
             fi
+
             exit 1
           fi
 
 
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   # 4. CI Gate
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   ci-gate:
     name: ci gate
 
     if: always()
 
-    needs: [detect, build, publish]
+    needs:
+      - detect
+      - build
+      - publish
 
     runs-on: ubuntu-latest
 
@@ -718,42 +693,61 @@ jobs:
           set -euo pipefail
 
           if [[ "$DETECT_RESULT" != "success" ]]; then
-            echo "detect failed"
+            echo "::error::Service detection failed"
             exit 1
           fi
 
           if [[ "$BUILD_RESULT" == "failure" || "$BUILD_RESULT" == "cancelled" ]]; then
-            echo "application build/test/scan failed"
+            echo "::error::Application build/test/security scan failed"
             exit 1
           fi
 
           if [[ "$PUBLISH_RESULT" == "failure" || "$PUBLISH_RESULT" == "cancelled" ]]; then
-            echo "application publish failed"
+            echo "::error::Application image publish failed"
             exit 1
           fi
 
           echo "Application CI gate passed."
 
 
-  # ---------------------------------------------------------------------------
-  # 5. GitOps write-back for development
+  # ===========================================================================
+  # 5. GitOps write-back
   #
-  # IMPORTANT:
-  # Manual workflow_dispatch does NOT automatically modify GitOps.
+  # Runs ONLY after:
   #
-  # Only a normal push to main performs GitOps write-back.
-  # ---------------------------------------------------------------------------
+  #   detect -> build -> publish -> CI gate
+  #
+  # Supported:
+  #   - push to main
+  #   - manual workflow_dispatch
+  #
+  # It updates GitOps and creates a PR.
+  # It NEVER runs kubectl.
+  # ArgoCD deploys after the GitOps PR is merged.
+  # ===========================================================================
   gitops:
-    name: gitops write-back (dev)
+    name: GitOps write-back (dev)
 
-    needs: [detect, publish]
+    needs:
+      - detect
+      - publish
+      - ci-gate
 
     if: >
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      needs.detect.outputs.any == 'true'
+      needs.detect.outputs.any == 'true' &&
+      needs.publish.result == 'success' &&
+      needs.ci-gate.result == 'success' &&
+      (
+        (
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        ) ||
+        github.event_name == 'workflow_dispatch'
+      )
 
     runs-on: ubuntu-latest
+
+    timeout-minutes: 15
 
     environment: dev
 
@@ -763,75 +757,88 @@ jobs:
       id-token: write
 
     concurrency:
-      group: gitops-writeback-${{ needs.detect.outputs.environment }}
+      group: gitops-writeback-dev
       cancel-in-progress: false
 
     steps:
 
       # -----------------------------------------------------------------------
-      # Checkout GitOps repository/workspace
+      # Checkout
       # -----------------------------------------------------------------------
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITOPS_TOKEN || github.token }}
+          fetch-depth: 0
 
 
       # -----------------------------------------------------------------------
-      # yq
+      # Install yq
       # -----------------------------------------------------------------------
-      - uses: mikefarah/yq@v4.44.3
+      - name: Install yq
+        uses: mikefarah/yq@v4.44.3
 
 
       # -----------------------------------------------------------------------
       # AWS OIDC
       # -----------------------------------------------------------------------
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
 
       # -----------------------------------------------------------------------
-      # Update image registry, tag and digest
+      # Update GitOps image references
+      #
+      # Only selected/changed services are modified.
       # -----------------------------------------------------------------------
-      - name: Bump image registry and image tags
+      - name: Update GitOps image references
         env:
           SERVICES: ${{ needs.detect.outputs.services }}
           ENVIRONMENT: ${{ needs.detect.outputs.environment }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ECR_NAMESPACE: ${{ env.ECR_NAMESPACE }}
         run: |
           set -euo pipefail
 
-          REGISTRY=$(
+          REGISTRY="$(
             aws ecr describe-registry \
-              --region "${AWS_REGION}" \
+              --region "$AWS_REGION" \
               --query 'registryId' \
               --output text
-          ).dkr.ecr.${AWS_REGION}.amazonaws.com
+          ).dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+          echo "ECR registry: $REGISTRY"
+          echo "Services: $SERVICES"
 
           yq -i \
             ".image.registry = \"$REGISTRY\"" \
             environments/dev/global-values.yaml
 
-          for svc in $(echo "$SERVICES" | yq -r '.[]' -p json); do
+          while IFS= read -r svc; do
+            [ -n "$svc" ] || continue
 
-            f="charts/$svc/values-$ENVIRONMENT.yaml"
+            file="charts/$svc/values-$ENVIRONMENT.yaml"
 
-            if [ ! -f "$f" ]; then
-              echo "skip $f (missing)"
-              continue
+            if [ ! -f "$file" ]; then
+              echo "::error::GitOps values file not found: $file"
+              exit 1
             fi
 
-            digest=$(
+            digest="$(
               aws ecr describe-images \
                 --region "$AWS_REGION" \
                 --repository-name "$ECR_NAMESPACE/$svc" \
-                --image-ids imageTag="${GITHUB_SHA}" \
+                --image-ids "imageTag=${GITHUB_SHA}" \
                 --query 'imageDetails[0].imageDigest' \
                 --output text
-            )
+            )"
 
             if [ -z "$digest" ] || [ "$digest" = "None" ]; then
-              echo "::error::Unable to find ECR digest for $svc:${GITHUB_SHA}"
+              echo "::error::Unable to find ECR image:"
+              echo "  $ECR_NAMESPACE/$svc:${GITHUB_SHA}"
               exit 1
             fi
 
@@ -839,34 +846,63 @@ jobs:
               ".image.repository = \"$ECR_NAMESPACE/$svc\" |
                .image.tag = \"${GITHUB_SHA}\" |
                .image.digest = \"$digest\"" \
-              "$f"
+              "$file"
 
-            echo "updated $f -> $ECR_NAMESPACE/$svc:${GITHUB_SHA}@$digest"
+            echo "Updated $file"
+            echo "Image: $ECR_NAMESPACE/$svc:${GITHUB_SHA}"
+            echo "Digest: $digest"
 
-          done
+          done < <(echo "$SERVICES" | yq -r '.[]' -p json)
 
 
       # -----------------------------------------------------------------------
-      # Validate Helm values
+      # Validate changed YAML files
       # -----------------------------------------------------------------------
-      - name: Validate Helm values YAML
+      - name: Validate GitOps YAML
         run: |
           set -euo pipefail
 
-          for f in charts/*/values-*.yaml; do
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMR -- '*.yaml' '*.yml'
+          )
 
-            [ -f "$f" ] || continue
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::No YAML files changed"
+            exit 0
+          fi
 
-            yq eval '.' "$f" > /dev/null || {
-              echo "::error::Invalid YAML: $f"
+          for file in "${files[@]}"; do
+            echo "Validating $file"
+
+            yq eval '.' "$file" >/dev/null || {
+              echo "::error::Invalid YAML: $file"
               exit 1
             }
-
           done
+
+
+      # -----------------------------------------------------------------------
+      # Validate whitespace
+      # -----------------------------------------------------------------------
+      - name: Validate GitOps diff
+        run: |
+          set -euo pipefail
+
+          git diff --check
+
+          echo "Git status:"
+          git status --short
+
+          echo "GitOps diff:"
+          git diff -- \
+            environments/dev/global-values.yaml \
+            charts/*/values-dev.yaml
 
 
       # -----------------------------------------------------------------------
       # Submit GitOps PR
+      #
+      # Existing repository script handles branch/commit/PR creation.
       # -----------------------------------------------------------------------
       - name: Submit GitOps PR
         env:
@@ -875,38 +911,22 @@ jobs:
           set -euo pipefail
 
           ./scripts/create-gitops-pr.sh \
-            "automation/dev-${{ github.run_id }}" \
-            "chore(deploy): dev -> ${{ github.sha }}" \
-            "chore(deploy): promote ${{ github.sha }} to dev" \
-            "Automated GitOps update from application CI for commit ${{ github.sha }}."
+            "automation/dev-${GITHUB_RUN_ID}" \
+            "chore(deploy): promote ${GITHUB_SHA} to dev" \
+            "chore(deploy): dev -> ${GITHUB_SHA}" \
+            "Automated GitOps update from application CI.
 
+          Source commit: ${GITHUB_SHA}
 
-  # ---------------------------------------------------------------------------
-  # TEMP OIDC diagnostic
-  #
-  # TEMPORARY standalone job to capture the GitHub-issued OIDC claims for this
-  # repository under environment: dev. Runs only on manual workflow_dispatch and
-  # depends on no other job. Prints ONLY iss/aud/sub from the JWT payload - never
-  # the token itself, request token, or any secret. Remove after diagnosis.
-  # ---------------------------------------------------------------------------
-  temp-oidc-diagnostic:
-    name: TEMP OIDC diagnostic
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+          Workflow:
+          ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-    environment: dev
+          The application image was:
+          - built
+          - unit tested
+          - security scanned
+          - published to ECR
+          - signed with Cosign
+          - passed the CI gate
 
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-
-      - name: TEMP print OIDC claims (iss, aud, sub only)
-        run: |
-          set -euo pipefail
-          TOKEN="$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
-            | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')"
-          PAYLOAD="$(python3 -c "import sys,base64,json;p=sys.argv[1].split('.')[1];p+='='*(-len(p)%4);print(json.dumps(json.loads(base64.urlsafe_b64decode(p))))" "$TOKEN")"
-          python3 -c "import sys,json;d=json.loads(sys.argv[1]);print('iss='+str(d.get('iss')));print('aud='+str(d.get('aud')));print('sub='+str(d.get('sub')))" "$PAYLOAD"
+          ArgoCD will deploy the GitOps change after the PR is merged."
