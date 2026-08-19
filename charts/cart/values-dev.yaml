@@ -1,11 +1,11 @@
 # cart - dev overrides. Only values that differ from values.yaml.
 environment: dev
 namespace: roboshop-dev
-
 replicaCount: 1
 image:
-  tag: "2.0.1"
-
+  tag: "b3b6a5c27b095ac4606e1766f46d652070cf09af"
+  repository: roboshop/cart
+  digest: sha256:967818e96cdfb218124e30036b49dcef3c429564f0b679046f3794bf7ae7dfba
 resources:
   requests:
     cpu: 50m
@@ -13,25 +13,20 @@ resources:
   limits:
     cpu: "250m"
     memory: 256Mi
-
 autoscaling:
   enabled: false
   minReplicas: 1
   maxReplicas: 3
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-
 topologySpreadConstraints:
   enabled: false
   maxSkew: 1
   topologyKey: topology.kubernetes.io/zone
   whenUnsatisfiable: ScheduleAnyway
-
 nodeSelector: {}
-
 commonAnnotations:
   argocd.argoproj.io/sync-wave: "1"
   roboshop.io/environment: "dev"
