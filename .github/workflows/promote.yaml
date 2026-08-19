@@ -43,7 +43,7 @@ jobs:
           ref: main
           token: ${{ secrets.GITOPS_TOKEN || github.token }}
 
-      - uses: mikefarah/yq@v4.44.3
+      - uses: mikefarah/yq@v4.53.3
 
       - name: Verify the release exists
         run: |
