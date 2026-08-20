@@ -29,7 +29,15 @@ updates:
     directory: /infrastructure/environments/dev
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "hashicorp/aws"
+        versions:
+          - "version-update:semver-major"
   - package-ecosystem: terraform
     directory: /infrastructure/environments/production
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "hashicorp/aws"
+        versions:
+          - "version-update:semver-major"
