@@ -1,0 +1,37 @@
+{{- /* App-of-apps root for the platform layer (monitoring, logging, kyverno). */}}
+{{- /* Mirrors gitops/applications/root-platform.yaml. */}}
+{{- /* Applied once per cluster by Terraform (helm release argocd-bootstrap). */}}
+{{- /* The child Applications in gitops/platform are pulled from Git. */}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoUrl }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: gitops/platform
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 10m
+  revisionHistoryLimit: 5

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: argocd-bootstrap
-description: Argo CD bootstrap for Roboshop - the AppProject and the app-of-apps root Application. Released by Terraform right after Argo CD itself is installed, so a cluster needs no manual kubectl apply.
+description: Argo CD bootstrap for Roboshop - the roboshop + platform AppProjects and the app-of-apps root Applications (roboshop-dev-root, platform-root). Released by Terraform right after Argo CD itself is installed, so a cluster needs no manual kubectl apply.
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

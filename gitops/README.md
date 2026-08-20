@@ -13,19 +13,23 @@ argocd/
 
 ## Bootstrap
 
-The `roboshop` AppProject and the dev root Application are applied
-**automatically by Terraform** (`infrastructure/environments/dev`) as the Helm
-release `roboshop-gitops-bootstrap` (chart `charts/argocd-bootstrap`), right
-after Argo CD itself is installed. No manual `kubectl apply` is required and
+The `roboshop` and `platform` AppProjects plus the dev and platform root
+Applications are applied **automatically by Terraform**
+(`infrastructure/environments/dev`) as the Helm release
+`roboshop-gitops-bootstrap` (chart `charts/argocd-bootstrap`), right after
+Argo CD itself is installed. No manual `kubectl apply` is required and
 re-running Terraform is a no-op once the resources exist.
 
 ```text
 Terraform
   └─ helm_release.argocd           (argo-cd chart, installs Argo CD + CRDs)
-  └─ helm_release.argocd_bootstrap (roboshop AppProject + roboshop-dev-root)
-        └─ Argo CD syncs the root Application
-              └─ ApplicationSet roboshop-dev (managed from Git)
-                    └─ 11 dev Applications (platform, datastores, services, frontend)
+  └─ helm_release.argocd_bootstrap (roboshop + platform AppProjects,
+  │                                 roboshop-dev-root + platform-root)
+        ├─ Argo CD syncs roboshop-dev-root
+        │     └─ ApplicationSet roboshop-dev (managed from Git)
+        │           └─ 11 dev Applications (platform, datastores, services, frontend)
+        └─ Argo CD syncs platform-root
+              └─ gitops/platform Applications (kyverno, monitoring, logging)
 ```
 
 For a cluster where the AppProject or root Application was previously created
