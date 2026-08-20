@@ -23,6 +23,10 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: kyverno
       server: https://kubernetes.default.svc
+    # kube-prometheus-stack creates headless ClusterIP Services in
+    # kube-system to scrape the kube-proxy and CoreDNS pods that run on EKS.
+    - namespace: kube-system
+      server: https://kubernetes.default.svc
   # Platform charts legitimately need CRDs and cluster RBAC.
   clusterResourceWhitelist:
     - group: '*'
