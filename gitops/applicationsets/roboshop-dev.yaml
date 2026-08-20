@@ -77,8 +77,8 @@ spec:
             releaseName: '{{.name}}'
             valueFiles:
               - values.yaml
-              - values-dev.yaml
               - $values/environments/dev/global-values.yaml
+              - values-dev.yaml
         - repoURL: https://github.com/manikanta-gitops/roboshop-enterprise-observability-clean.git
           targetRevision: main
           ref: values

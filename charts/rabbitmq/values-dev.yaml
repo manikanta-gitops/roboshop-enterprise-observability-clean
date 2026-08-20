@@ -4,6 +4,7 @@ namespace: roboshop-dev
 
 image:
   tag: "3-management-alpine"
+  registry: ""
 
 persistence:
   storageClass: gp3
