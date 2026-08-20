@@ -129,6 +129,19 @@ module "addons" {
   tags              = local.tags
 }
 
+# AWS Secrets Manager secret roboshop/<env>/app consumed by the ExternalSecret
+# in the platform chart. Depends on the ESO IRSA role so the KMS key policy can
+# grant it decrypt access; Terraform derives that dependency from the input.
+module "secrets" {
+  source = "../../modules/secrets"
+
+  project     = var.project
+  environment = local.environment
+  tags        = local.tags
+
+  external_secrets_role_arn = module.addons.external_secrets_role_arn
+}
+
 # --------------------------------------------------------------------------- #
 # Argo CD bootstrap: the roboshop AppProject + app-of-apps root Application.
 #
