@@ -178,7 +178,7 @@ jobs:
           ./scripts/smoke-test.sh "$DEV_SMOKE_BASE_URL" "$VERSION"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: v${{ steps.v.outputs.version }}
           generate_release_notes: true
