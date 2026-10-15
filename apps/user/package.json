@@ -13,7 +13,7 @@
   "author": "SteveW",
   "license": "Apache-2.0",
   "dependencies": {
-    "@instana/collector": "^6.5.0",
+    "@instana/collector": "^6.6.1",
     "bcryptjs": "^3.0.2",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
